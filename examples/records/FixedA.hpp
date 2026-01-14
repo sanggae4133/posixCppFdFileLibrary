@@ -26,4 +26,13 @@ class FixedA : public FdFile::FixedRecordBase<FixedA> {
         setRecordId(std::to_string(idVal));
         defineLayout();
     }
+
+    FixedA(const char* n, long a, const char* idStr) {
+        std::memset(name, 0, sizeof(name));
+        if (n)
+            std::strncpy(name, n, sizeof(name));
+        age = a;
+        setRecordId(std::string(idStr));
+        defineLayout();
+    }
 };

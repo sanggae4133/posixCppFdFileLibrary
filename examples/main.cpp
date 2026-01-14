@@ -51,13 +51,17 @@ void testFixed() {
         return;
     }
 
-    FixedA fa("bob", 20, 100);
+    //FixedA fa("bob", 20, 100);
+    FixedA fa("bob", 20, "abc");
     repo.save(fa, ec);
     std::cout << "Saved FixedA(bob, 100)\n";
 
-    auto found = repo.findById("100", ec);
+    //auto found = repo.findById("100", ec);
+    auto found = repo.findById("abc", ec);
     if (found) {
         std::cout << "Found: name=" << found->name << " age=" << found->age << "\n";
+        std::cout << "TypeName: " << found->typeName() << "\n";
+        std::cout << "RecordId: " << found->id() << "\n";
     }
 
     std::cout << "Count: " << repo.count(ec) << "\n";
