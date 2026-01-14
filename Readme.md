@@ -11,26 +11,47 @@ A high-performance C++ file repository library using POSIX APIs (`open`, `read`,
 | **C++17 Tuple-Based** | Modern field metadata system using `std::tuple` and fold expressions |
 | **RAII Safety** | Automatic resource cleanup for file descriptors and memory mappings |
 | **Upsert Semantics** | `save()` automatically inserts or updates based on record ID |
-| **Two Record Types** | Fixed-length (binary) and Variable-length (JSON-like) formats |
+| **GoogleTest Integration** | Comprehensive unit tests with CTest support |
 
 ## Project Structure
 
 ```
-fdFileLib/
-├── record/
-│   ├── RecordBase.hpp           # Base Interface (for Variable Records)
-│   ├── VariableRecordBase.hpp   # Variable-length records (Virtual)
-│   ├── FixedRecordBase.hpp      # Fixed-length records (CRTP Template)
-│   └── FieldMeta.hpp            # C++17 tuple-based field metadata
-├── repository/
-│   ├── RecordRepository.hpp     # Template Repository Interface
-│   ├── VariableFileRepositoryImpl.hpp # Variable-length Repo
-│   └── UniformFixedRepositoryImpl.hpp # Fixed-length Repo (Template)
-├── util/
-│   ├── UniqueFd.hpp             # RAII File Descriptor wrapper
-│   ├── MmapGuard.hpp            # RAII mmap wrapper
-│   └── ...
-└── CMakeLists.txt
+posixCppFdFileLibrary/
+├── CMakeLists.txt              # Root CMake (includes GoogleTest)
+├── compile.sh                  # Build script
+├── run.sh                      # Run example script
+│
+├── fdFileLib/                  # Core Library
+│   ├── CMakeLists.txt
+│   ├── record/
+│   │   ├── RecordBase.hpp          # Base interface
+│   │   ├── VariableRecordBase.hpp  # Variable-length (Virtual)
+│   │   ├── FixedRecordBase.hpp     # Fixed-length (CRTP)
+│   │   └── FieldMeta.hpp           # C++17 tuple-based field metadata
+│   ├── repository/
+│   │   ├── RecordRepository.hpp            # Repository interface
+│   │   ├── VariableFileRepositoryImpl.hpp  # Variable-length repo
+│   │   ├── VariableFileRepositoryImpl.cpp
+│   │   └── UniformFixedRepositoryImpl.hpp  # Fixed-length repo (Header-only)
+│   └── util/
+│       ├── UniqueFd.hpp        # RAII file descriptor
+│       ├── MmapGuard.hpp       # RAII mmap wrapper
+│       ├── FileLockGuard.hpp   # File locking
+│       └── textFormatUtil.hpp  # JSON-like parsing/formatting
+│
+├── examples/                   # Usage Examples
+│   ├── main.cpp                # Comprehensive demo
+│   └── records/
+│       ├── FixedA.hpp          # Fixed record example A
+│       ├── FixedB.hpp          # Fixed record example B
+│       ├── A.hpp               # Variable record example A
+│       └── B.hpp               # Variable record example B
+│
+└── tests/                      # GoogleTest Unit Tests
+    ├── CMakeLists.txt
+    ├── FixedRecordTest.cpp     # 14 tests
+    ├── VariableRecordTest.cpp  # 11 tests
+    └── UtilTest.cpp            # 17 tests
 ```
 
 ---
@@ -49,15 +70,34 @@ fdFileLib/
 git clone <repo-url>
 cd posixCppFdFileLibrary
 
+# Build (GoogleTest will be downloaded automatically)
 mkdir build && cd build
 cmake ..
-make
+cmake --build . -j
 
-# Or using the provided script
+# Or use the provided script
 ./compile.sh
+```
 
-# Run example
+### Run Tests
+
+```bash
+# Run all 42 unit tests
+cd build && ctest --output-on-failure
+
+# Run specific test suite
+./build/fdfile_tests --gtest_filter="FixedARepositoryTest.*"
+
+# Run specific test
+./build/fdfile_tests --gtest_filter="VariableRepositoryTest.UpdateExistingRecord"
+```
+
+### Run Example
+
+```bash
 ./run.sh
+# or
+./build/fdfile_example
 ```
 
 ---
@@ -167,18 +207,6 @@ int main() {
 }
 ```
 
-### Record Binary Format
-
-Fixed-length records are stored in strict binary format with pre-calculated offsets:
-
-```
-TypeName\0...,id:"001\0..."{name:"Alice\0...",age:0000000000000000031}
-```
-
-- No parsing required at runtime
-- Direct byte-offset access for each field
-- Numeric fields are zero-padded to 19 digits (int64_t max)
-
 ---
 
 ## 2. Variable-Length Records
@@ -220,7 +248,7 @@ public:
     }
 };
 
-// Usage
+// Usage requires prototype instances for deserialization
 std::vector<std::unique_ptr<VariableRecordBase>> prototypes;
 prototypes.push_back(std::make_unique<Config>());
 
@@ -358,18 +386,6 @@ int main() {
 }
 ```
 
-### 레코드 바이너리 형식
-
-고정 길이 레코드는 미리 계산된 오프셋을 사용하는 엄격한 바이너리 형식으로 저장됩니다:
-
-```
-TypeName\0...,id:"001\0..."{name:"Alice\0...",age:0000000000000000031}
-```
-
-- 런타임에 파싱 불필요
-- 각 필드에 대한 직접 바이트 오프셋 접근
-- 숫자 필드는 19자리로 0으로 패딩 (int64_t 최대값)
-
 ---
 
 ## 2. 가변 길이 레코드
@@ -394,10 +410,10 @@ public:
         return std::make_unique<Config>(*this);
     }
 
-    // toKv(), fromKv() 구현...
+    // toKv(), fromKv() 구현 필요...
 };
 
-// 사용법
+// 역직렬화를 위한 프로토타입 인스턴스 필요
 std::vector<std::unique_ptr<VariableRecordBase>> prototypes;
 prototypes.push_back(std::make_unique<Config>());
 
@@ -427,6 +443,28 @@ FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(prototypes), ec)
 | `FD_STR(member)` | 문자열 필드 정의 (char 배열) |
 | `FD_NUM(member)` | 숫자 필드 정의 (int64_t, 19자리) |
 | `FD_RECORD_IMPL(Class, TypeName, TypeLen, IdLen)` | 공통 레코드 메서드 생성 |
+
+---
+
+## Testing
+
+### Unit Tests (GoogleTest)
+
+이 프로젝트는 **GoogleTest**를 사용한 42개의 단위 테스트를 포함합니다:
+
+| Test File | Tests | Description |
+|-----------|-------|-------------|
+| `FixedRecordTest.cpp` | 14 | FixedA/FixedB CRUD 테스트 |
+| `VariableRecordTest.cpp` | 11 | Variable record (A/B) CRUD 테스트 |
+| `UtilTest.cpp` | 17 | textFormatUtil 함수 테스트 |
+
+```bash
+# 모든 테스트 실행
+cd build && ctest --output-on-failure
+
+# 특정 테스트 스위트만 실행
+./fdfile_tests --gtest_filter="FixedARepositoryTest.*"
+```
 
 ---
 
