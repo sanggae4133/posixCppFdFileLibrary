@@ -82,7 +82,7 @@ public:
         std::vector<std::pair<std::string, std::pair<bool, std::string>>> fields;
         rec.toKv(fields);
 
-        std::string line = flatfmt::formatLine(rec.typeName(), fields);
+        std::string line = util::formatLine(rec.typeName(), fields);
         line.push_back('\n');
 
         // 우리끼리 tearing 방지(상대가 lock 무시하면 어쩔 수 없음. 대신 read에서 포맷 깨짐 감지)
@@ -127,7 +127,7 @@ public:
 
         std::string type;
         std::unordered_map<std::string, std::pair<bool, std::string>> kv;
-        if (!flatfmt::parseLine(line, type, kv, ec)) return false;
+        if (!util::parseLine(line, type, kv, ec)) return false;
 
         auto it = typeMap_.find(type);
         if (it == typeMap_.end()) { ec = std::make_error_code(std::errc::not_supported); return false; }

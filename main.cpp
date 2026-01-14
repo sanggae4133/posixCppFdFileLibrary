@@ -7,7 +7,7 @@ int main() {
     std::error_code ec;
 
     FdFile::FdTextFile f(
-        "/tmp/mixed.txt",
+        "./test/mixed.txt",
         {
             {"A", [](){ return std::make_unique<A>(); }},
             {"B", [](){ return std::make_unique<B>(); }},

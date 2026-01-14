@@ -41,7 +41,7 @@ public:
         name = n->second.second;
 
         long tmp = 0;
-        if (!FdFile::util::flatfmt::parseLongStrict(i->second.second, tmp, ec)) return false;
+        if (!FdFile::util::parseLongStrict(i->second.second, tmp, ec)) return false;
         id = tmp;
         return true;
     }
