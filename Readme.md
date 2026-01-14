@@ -15,16 +15,23 @@ A C++ library for storing and reading various types of records in text files usi
 
 ```
 posixCppFdFileLibrary/
-├── fdFileLib/
-│   ├── FdTextFile.hpp      # Main file class
-│   ├── TextRecordBase.hpp  # Record base class
-│   └── textFormatUtil.hpp  # Text format utilities
-├── records/
-│   ├── A.hpp               # Example record type A
-│   └── B.hpp               # Example record type B
-├── test/
-│   └── mixed.txt           # Test data file
-├── main.cpp                # Usage example
+├── fdFileLib/                    # Core library (header-only)
+│   ├── FdTextFile.hpp            # Main file class
+│   ├── TextRecordBase.hpp        # Record base class
+│   ├── textFormatUtil.hpp        # Text format utilities
+│   ├── FileLockGuard.hpp         # RAII file lock guard
+│   ├── UniqueFd.hpp              # RAII file descriptor wrapper
+│   └── unique_fd.hpp             # Compatibility header
+├── examples/                     # Usage examples
+│   ├── main.cpp                  # Example program
+│   └── records/
+│       ├── A.hpp                 # Example record type A
+│       └── B.hpp                 # Example record type B
+├── records/                      # Backward-compatible headers
+│   ├── A.hpp
+│   └── B.hpp
+├── CMakeLists.txt                # CMake build configuration
+├── LICENSE
 └── Readme.md
 ```
 
@@ -130,6 +137,7 @@ B { "name": "albert", "id": 1234, "pw": "1234" }
 
 - Blank lines are ignored.
 - Comment lines are ignored: lines whose first non-space character is `#` are treated as comments.
+- Comments can also appear after record content (outside of quoted strings).
 
 ## Key Features
 
@@ -169,7 +177,7 @@ cmake --build build -j
 ./build/fdfile_example
 
 # Or compile directly
-g++ -std=c++17 -o main main.cpp -lstdc++fs
+g++ -std=c++17 -I. -o main examples/main.cpp -lstdc++fs
 
 # Run
 ./main
@@ -204,16 +212,23 @@ POSIX 파일 디스크립터를 사용하여 텍스트 파일에 다양한 타�
 
 ```
 posixCppFdFileLibrary/
-├── fdFileLib/
-│   ├── FdTextFile.hpp      # 메인 파일 클래스
-│   ├── TextRecordBase.hpp  # 레코드 베이스 클래스
-│   └── textFormatUtil.hpp  # 텍스트 포맷 유틸리티
-├── records/
-│   ├── A.hpp               # 예제 레코드 타입 A
-│   └── B.hpp               # 예제 레코드 타입 B
-├── test/
-│   └── mixed.txt           # 테스트 데이터 파일
-├── main.cpp                # 사용 예제
+├── fdFileLib/                    # 코어 라이브러리 (헤더 온리)
+│   ├── FdTextFile.hpp            # 메인 파일 클래스
+│   ├── TextRecordBase.hpp        # 레코드 베이스 클래스
+│   ├── textFormatUtil.hpp        # 텍스트 포맷 유틸리티
+│   ├── FileLockGuard.hpp         # RAII 파일 잠금 가드
+│   ├── UniqueFd.hpp              # RAII 파일 디스크립터 래퍼
+│   └── unique_fd.hpp             # 호환성 헤더
+├── examples/                     # 사용 예제
+│   ├── main.cpp                  # 예제 프로그램
+│   └── records/
+│       ├── A.hpp                 # 예제 레코드 타입 A
+│       └── B.hpp                 # 예제 레코드 타입 B
+├── records/                      # 하위 호환용 헤더
+│   ├── A.hpp
+│   └── B.hpp
+├── CMakeLists.txt                # CMake 빌드 설정
+├── LICENSE
 └── Readme.md
 ```
 
@@ -319,6 +334,7 @@ B { "name": "albert", "id": 1234, "pw": "1234" }
 
 - 빈 줄은 무시됩니다.
 - 주석 줄은 무시됩니다: 공백을 제외한 첫 문자가 `#`이면 주석으로 취급합니다.
+- 레코드 뒤에도 주석을 붙일 수 있습니다 (따옴표 문자열 밖에서).
 
 ## 주요 특징
 
@@ -358,7 +374,7 @@ cmake --build build -j
 ./build/fdfile_example
 
 # 또는 직접 컴파일
-g++ -std=c++17 -o main main.cpp -lstdc++fs
+g++ -std=c++17 -I. -o main examples/main.cpp -lstdc++fs
 
 # 실행
 ./main
