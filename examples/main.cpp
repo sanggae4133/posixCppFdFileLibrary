@@ -1,7 +1,8 @@
 #include <iostream>
+
 #include "fdFileLib/FdTextFile.hpp"
-#include "records/A.hpp"
-#include "records/B.hpp"
+#include "examples/records/A.hpp"
+#include "examples/records/B.hpp"
 
 int main() {
     std::error_code ec;
@@ -9,27 +10,39 @@ int main() {
     FdFile::FdTextFile f(
         "./test/mixed.txt",
         {
-            {"A", [](){ return std::make_unique<A>(); }},
-            {"B", [](){ return std::make_unique<B>(); }},
+            {"A", []() { return std::make_unique<A>(); }},
+            {"B", []() { return std::make_unique<B>(); }},
         },
-        ec
-    );
+        ec);
     if (ec) {
         std::cerr << "open: " << ec.message() << "\n";
         return 1;
     }
 
-    A a; a.name = "john"; a.id = 123;
-    B b1; b1.name = "albert";  b1.id = 1234;  b1.pw = "1234";
-    B b2; b2.name = "albert2"; b2.id = 12345; b2.pw = "1234";
+    A a;
+    a.name = "john";
+    a.id = 123;
+    B b1;
+    b1.name = "albert";
+    b1.id = 1234;
+    b1.pw = "1234";
+    B b2;
+    b2.name = "albert2";
+    b2.id = 12345;
+    b2.pw = "1234";
 
-    if (!f.append(a,  true, ec)) { std::cerr << "append A: "  << ec.message() << "\n"; return 1; }
-    if (!f.append(b1, true, ec)) { std::cerr << "append B1: " << ec.message() << "\n"; return 1; }
-    if (!f.append(b2, true, ec)) { std::cerr << "append B2: " << ec.message() << "\n"; return 1; }
-
-    // 사람이 파일을 편집해서 albert2 -> albert3 로 바꾸면, 변경값 그대로 읽힘.
-    // 마지막 줄이 개행 없이 끝나도, 레코드가 완전하면 OK.
-    // 하지만 "pw": 로 끊기면 parseLine에서 에러.
+    if (!f.append(a, true, ec)) {
+        std::cerr << "append A: " << ec.message() << "\n";
+        return 1;
+    }
+    if (!f.append(b1, true, ec)) {
+        std::cerr << "append B1: " << ec.message() << "\n";
+        return 1;
+    }
+    if (!f.append(b2, true, ec)) {
+        std::cerr << "append B2: " << ec.message() << "\n";
+        return 1;
+    }
 
     off_t off = 0;
     for (int k = 0; k < 3; ++k) {
@@ -51,3 +64,4 @@ int main() {
         off = next;
     }
 }
+

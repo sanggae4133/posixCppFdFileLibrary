@@ -7,13 +7,18 @@
 #include <memory>
 #include <system_error>
 #include <filesystem>
+#include <string_view>
+#include <cstring>
 
 #include "TextRecordBase.hpp"
 #include "textFormatUtil.hpp"
+#include "UniqueFd.hpp"
+#include "FileLockGuard.hpp"
 
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 namespace FdFile {
 
@@ -59,16 +64,26 @@ public:
 #ifdef O_CLOEXEC
         flags |= O_CLOEXEC;
 #endif
-        fd_ = ::open(path_.c_str(), flags, mode);
-        if (fd_ < 0) { ec = std::error_code(errno, std::generic_category()); return; }
+        fd_.reset(::open(path_.c_str(), flags, mode));
+        if (!fd_) { ec = std::error_code(errno, std::generic_category()); return; }
+
+        // ✅ 기존 파일 내용이 등록된 타입/포맷과 맞는지 전체 검증
+        // 하나라도 깨져 있으면 생성 실패로 처리
+        if (!validateExisting(ec)) {
+            fd_.reset();
+            return;
+        }
     }
 
-    ~FdTextFile() { if (fd_ >= 0) ::close(fd_); }
+    ~FdTextFile() = default;
 
     FdTextFile(const FdTextFile&) = delete;
     FdTextFile& operator=(const FdTextFile&) = delete;
 
-    bool ok() const { return fd_ >= 0; }
+    FdTextFile(FdTextFile&&) noexcept = default;
+    FdTextFile& operator=(FdTextFile&&) noexcept = default;
+
+    bool ok() const { return fd_.valid(); }
 
     bool append(const TextRecordBase& rec, bool doFsync, std::error_code& ec) {
         ec.clear();
@@ -86,17 +101,16 @@ public:
         line.push_back('\n');
 
         // 우리끼리 tearing 방지(상대가 lock 무시하면 어쩔 수 없음. 대신 read에서 포맷 깨짐 감지)
-        if (!lockExclusive(ec)) return false;
+        FileLockGuard lk(fd_.get(), FileLockGuard::Mode::Exclusive, ec);
+        if (ec) return false;
 
         bool okWrite = false;
         do {
-            if (::lseek(fd_, 0, SEEK_END) < 0) { ec = std::error_code(errno, std::generic_category()); break; }
+            if (::lseek(fd_.get(), 0, SEEK_END) < 0) { ec = std::error_code(errno, std::generic_category()); break; }
             if (!writeAll(line.data(), line.size(), ec)) break;
             if (doFsync && !sync(ec)) break;
             okWrite = true;
         } while (0);
-
-        unlockIgnore();
         return okWrite;
     }
 
@@ -109,20 +123,22 @@ public:
 
         if (!ok()) { ec = std::make_error_code(std::errc::bad_file_descriptor); return false; }
 
-        if (!lockShared(ec)) return false;
+        FileLockGuard lk(fd_.get(), FileLockGuard::Mode::Shared, ec);
+        if (ec) return false;
 
         std::string line;
         bool okRead = false;
         do {
-            if (::lseek(fd_, offset, SEEK_SET) < 0) { ec = std::error_code(errno, std::generic_category()); break; }
+            // seek가 들어가면 버퍼 기반 리더 상태를 리셋해야 함
+            resetReadBuffer();
+            if (::lseek(fd_.get(), offset, SEEK_SET) < 0) { ec = std::error_code(errno, std::generic_category()); break; }
 
             // ✅ 마지막 줄 개행 없어도 허용
-            if (!readLineRelaxed(line, nextOffset, ec)) break;
+            // ✅ 빈 라인/주석 라인(#...)은 스킵
+            if (!readNextRecordLine(line, nextOffset, ec)) break;
 
             okRead = true;
         } while (0);
-
-        unlockIgnore();
         if (!okRead) return false;
 
         std::string type;
@@ -144,47 +160,65 @@ public:
 
     bool sync(std::error_code& ec) {
         ec.clear();
-        if (::fsync(fd_) < 0) { ec = std::error_code(errno, std::generic_category()); return false; }
+        if (::fsync(fd_.get()) < 0) { ec = std::error_code(errno, std::generic_category()); return false; }
         return true;
     }
 
 private:
-    bool lockShared(std::error_code& ec) {
+    // 생성 시점에 기존 파일 전체 스캔:
+    // - 각 줄이 parseLine 가능해야 함
+    // - type이 등록된 타입이어야 함
+    // - factory로 만든 객체의 typeName이 일치해야 함
+    // - fromKv가 성공해야 함
+    // - 마지막 줄은 개행 없이 끝나도 OK(하지만 잘린/깨진 레코드는 에러)
+    bool validateExisting(std::error_code& ec) {
         ec.clear();
-        struct flock fl{};
-        fl.l_type = F_RDLCK;
-        fl.l_whence = SEEK_SET;
-        fl.l_start = 0;
-        fl.l_len = 0;
-        if (::fcntl(fd_, F_SETLKW, &fl) < 0) { ec = std::error_code(errno, std::generic_category()); return false; }
-        return true;
-    }
+        if (!ok()) { ec = std::make_error_code(std::errc::bad_file_descriptor); return false; }
 
-    bool lockExclusive(std::error_code& ec) {
-        ec.clear();
-        struct flock fl{};
-        fl.l_type = F_WRLCK;
-        fl.l_whence = SEEK_SET;
-        fl.l_start = 0;
-        fl.l_len = 0;
-        if (::fcntl(fd_, F_SETLKW, &fl) < 0) { ec = std::error_code(errno, std::generic_category()); return false; }
-        return true;
-    }
+        // 빈 파일이면 OK
+        struct stat st{};
+        if (::fstat(fd_.get(), &st) < 0) { ec = std::error_code(errno, std::generic_category()); return false; }
+        if (st.st_size == 0) return true;
 
-    void unlockIgnore() {
-        struct flock fl{};
-        fl.l_type = F_UNLCK;
-        fl.l_whence = SEEK_SET;
-        fl.l_start = 0;
-        fl.l_len = 0;
-        ::fcntl(fd_, F_SETLK, &fl);
+        FileLockGuard lk(fd_.get(), FileLockGuard::Mode::Shared, ec);
+        if (ec) return false;
+
+        bool okValidate = false;
+        do {
+            resetReadBuffer();
+            if (::lseek(fd_.get(), 0, SEEK_SET) < 0) { ec = std::error_code(errno, std::generic_category()); break; }
+
+            while (true) {
+                std::string line;
+                off_t nextOff = 0;
+                if (!readNextRecordLine(line, nextOff, ec)) {
+                    // EOF면 정상 종료
+                    if (ec == std::errc::result_out_of_range) { ec.clear(); okValidate = true; }
+                    break;
+                }
+
+                std::string type;
+                std::unordered_map<std::string, std::pair<bool, std::string>> kv;
+                if (!util::parseLine(line, type, kv, ec)) break;
+
+                auto it = typeMap_.find(type);
+                if (it == typeMap_.end()) { ec = std::make_error_code(std::errc::not_supported); break; }
+
+                auto obj = it->second();
+                if (!obj) { ec = std::make_error_code(std::errc::not_enough_memory); break; }
+                if (std::string(obj->typeName()) != type) { ec = std::make_error_code(std::errc::invalid_argument); break; }
+
+                if (!obj->fromKv(kv, ec)) break;
+            }
+        } while (0);
+        return okValidate;
     }
 
     bool writeAll(const void* buf, size_t n, std::error_code& ec) {
         const char* p = (const char*)buf;
         size_t left = n;
         while (left > 0) {
-            ssize_t w = ::write(fd_, p, left);
+            ssize_t w = ::write(fd_.get(), p, left);
             if (w < 0) {
                 if (errno == EINTR) continue;
                 ec = std::error_code(errno, std::generic_category());
@@ -197,41 +231,130 @@ private:
         return true;
     }
 
-    // ✅ relaxed: EOF에서 줄이 끝나도 out이 비어있지 않으면 마지막 레코드로 인정
+    void resetReadBuffer() noexcept {
+        readBufLen_ = 0;
+        readBufPos_ = 0;
+        bufFilePos_ = 0;
+        hasBufFilePos_ = false;
+    }
+
+    // 따옴표(") 밖에서 등장하는 # 부터 라인 끝까지는 주석으로 제거한다.
+    // - \" 처럼 escape된 따옴표는 문자열 종료로 보지 않음
+    // - 문자열 내부의 #는 주석 시작이 아님
+    static void stripCommentOutsideQuotes(std::string& s) {
+        bool inStr = false;
+        bool escape = false;
+        for (size_t i = 0; i < s.size(); ++i) {
+            const char c = s[i];
+            if (inStr) {
+                if (escape) {
+                    escape = false;
+                    continue;
+                }
+                if (c == '\\') { escape = true; continue; }
+                if (c == '"') { inStr = false; continue; }
+                continue;
+            } else {
+                if (c == '"') { inStr = true; continue; }
+                if (c == '#') { s.resize(i); break; }
+            }
+        }
+
+        // trim right (space/tab/\r)
+        while (!s.empty()) {
+            char t = s.back();
+            if (t == ' ' || t == '\t' || t == '\r') s.pop_back();
+            else break;
+        }
+    }
+
+    static bool isBlankAfterTrimLeft(std::string_view s) {
+        size_t i = 0;
+        while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r')) ++i;
+        return i == s.size();
+    }
+
+    // 버퍼 기반: 4KB 단위로 read + '\n' 스캔
+    // - EOF에서 out이 비어있지 않으면 마지막 레코드로 인정 (개행 없어도 OK)
+    // - 빈 줄/주석 줄은 상위 readNextRecordLine에서 스킵 가능
     bool readLineRelaxed(std::string& out, off_t& nextOff, std::error_code& ec) {
         out.clear();
         ec.clear();
 
-        off_t cur = ::lseek(fd_, 0, SEEK_CUR);
-        if (cur < 0) { ec = std::error_code(errno, std::generic_category()); return false; }
-        nextOff = cur;
+        if (!hasBufFilePos_) {
+            off_t cur = ::lseek(fd_.get(), 0, SEEK_CUR);
+            if (cur < 0) { ec = std::error_code(errno, std::generic_category()); return false; }
+            bufFilePos_ = cur;
+            hasBufFilePos_ = true;
+        }
+        nextOff = bufFilePos_;
 
-        char c;
         while (true) {
-            ssize_t r = ::read(fd_, &c, 1);
-            if (r < 0) {
-                if (errno == EINTR) continue;
-                ec = std::error_code(errno, std::generic_category());
-                return false;
-            }
-            if (r == 0) { // EOF
-                if (out.empty()) {
-                    ec = std::make_error_code(std::errc::result_out_of_range);
+            // 버퍼에 데이터가 없으면 채우기
+            if (readBufPos_ >= readBufLen_) {
+                ssize_t r = ::read(fd_.get(), readBuf_, sizeof(readBuf_));
+                if (r < 0) {
+                    if (errno == EINTR) continue;
+                    ec = std::error_code(errno, std::generic_category());
                     return false;
                 }
+                if (r == 0) { // EOF
+                    if (out.empty()) {
+                        ec = std::make_error_code(std::errc::result_out_of_range);
+                        return false;
+                    }
+                    return true; // 마지막 줄 개행 없음 OK
+                }
+                readBufLen_ = (size_t)r;
+                readBufPos_ = 0;
+            }
+
+            // '\n' 찾기
+            const char* start = readBuf_ + readBufPos_;
+            const char* end = readBuf_ + readBufLen_;
+            const char* nl = (const char*)memchr(start, '\n', (size_t)(end - start));
+            if (nl) {
+                out.append(start, nl);
+                size_t consumed = (size_t)((nl + 1) - start);
+                readBufPos_ += consumed;
+                bufFilePos_ += (off_t)consumed;
+                nextOff = bufFilePos_;
                 return true;
             }
-            nextOff++;
-            if (c == '\n') return true;
-            out.push_back(c);
+
+            // 버퍼 끝까지 모두 라인에 포함
+            out.append(start, end);
+            size_t consumed = (size_t)(end - start);
+            readBufPos_ += consumed;
+            bufFilePos_ += (off_t)consumed;
+            nextOff = bufFilePos_;
+        }
+    }
+
+    // ✅ 빈 라인/주석(#...) 라인을 무시하고 “다음 레코드 라인”을 읽는다.
+    // - EOF면 result_out_of_range
+    bool readNextRecordLine(std::string& out, off_t& nextOff, std::error_code& ec) {
+        ec.clear();
+        while (true) {
+            if (!readLineRelaxed(out, nextOff, ec)) return false;
+            stripCommentOutsideQuotes(out);
+            if (!isBlankAfterTrimLeft(out)) return true;
+            out.clear();
         }
     }
 
 private:
     std::string path_;
-    int fd_ = -1;
+    UniqueFd fd_;
     std::vector<TypeSpec> types_;
     std::unordered_map<std::string, std::function<std::unique_ptr<TextRecordBase>()>> typeMap_;
+
+    // buffered read state
+    char readBuf_[4096];
+    size_t readBufLen_ = 0;
+    size_t readBufPos_ = 0;
+    off_t bufFilePos_ = 0;       // 파일에서 "버퍼 시작 + readBufPos_"에 해당하는 위치
+    bool hasBufFilePos_ = false; // 초기화 여부
 };
 
 } // namespace FdFile

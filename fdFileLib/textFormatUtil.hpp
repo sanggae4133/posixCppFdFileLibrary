@@ -134,6 +134,11 @@ inline bool parseLine(const std::string& line,
             if (!parseIntToken(p, end, val)) { ec = std::make_error_code(std::errc::invalid_argument); return false; }
         }
 
+        // ✅ duplicate key는 포맷 오류로 처리 (기존에는 emplace로 silently drop 되었음)
+        if (kv.find(key) != kv.end()) {
+            ec = std::make_error_code(std::errc::invalid_argument);
+            return false;
+        }
         kv.emplace(std::move(key), std::make_pair(isStr, std::move(val)));
 
         skipWs(p, end);

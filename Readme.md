@@ -126,6 +126,11 @@ A { "name": "john", "id": 123 }
 B { "name": "albert", "id": 1234, "pw": "1234" }
 ```
 
+### Ignored Lines
+
+- Blank lines are ignored.
+- Comment lines are ignored: lines whose first non-space character is `#` are treated as comments.
+
 ## Key Features
 
 ### File Locking
@@ -158,7 +163,12 @@ if (!f.append(record, true, ec)) {
 ## Build and Run
 
 ```bash
-# Compile
+# CMake (recommended)
+cmake -S . -B build
+cmake --build build -j
+./build/fdfile_example
+
+# Or compile directly
 g++ -std=c++17 -o main main.cpp -lstdc++fs
 
 # Run
@@ -305,6 +315,11 @@ A { "name": "john", "id": 123 }
 B { "name": "albert", "id": 1234, "pw": "1234" }
 ```
 
+### 무시되는 라인
+
+- 빈 줄은 무시됩니다.
+- 주석 줄은 무시됩니다: 공백을 제외한 첫 문자가 `#`이면 주석으로 취급합니다.
+
 ## 주요 특징
 
 ### 파일 잠금
@@ -337,7 +352,12 @@ if (!f.append(record, true, ec)) {
 ## 빌드 및 실행
 
 ```bash
-# 컴파일
+# CMake (권장)
+cmake -S . -B build
+cmake --build build -j
+./build/fdfile_example
+
+# 또는 직접 컴파일
 g++ -std=c++17 -o main main.cpp -lstdc++fs
 
 # 실행
