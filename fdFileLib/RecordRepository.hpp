@@ -72,15 +72,29 @@ class RecordRepository {
         if (ec)
             return result;
 
-        T dummy;
-        const char* targetType = dummy.typeName();
-
         for (auto& rec : all) {
-            if (std::string(rec->typeName()) == targetType) {
+            if (dynamic_cast<T*>(rec.get())) {
                 result.push_back(std::unique_ptr<T>(static_cast<T*>(rec.release())));
             }
         }
         return result;
+    }
+
+    /// @brief ID와 타입으로 레코드 조회
+    /// @tparam T 조회할 레코드 타입
+    /// @param id 찾을 레코드 ID
+    /// @param ec 에러 코드
+    /// @return 찾은 레코드 (없거나 타입 불일치 시 nullptr)
+    template <typename T>
+    std::unique_ptr<T> findByIdAndType(const std::string& id, std::error_code& ec) {
+        auto rec = findById(id, ec);
+        if (ec || !rec)
+            return nullptr;
+
+        if (dynamic_cast<T*>(rec.get())) {
+            return std::unique_ptr<T>(static_cast<T*>(rec.release()));
+        }
+        return nullptr; // 타입 불일치
     }
 
     // =========================================================================

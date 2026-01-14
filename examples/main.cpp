@@ -14,24 +14,26 @@ void printMenu() {
 2. Save B (id, name, pw)
 3. Find All
 4. Find by ID
-5. Find all type A
-6. Find all type B
-7. Delete by ID
-8. Delete All
-9. Count
-10. Exists by ID
+5. Find by ID and Type A
+6. Find by ID and Type B
+7. Find all type A
+8. Find all type B
+9. Delete by ID
+10. Delete All
+11. Count
+12. Exists by ID
 0. Quit
 =======================
 )";
 }
 
 void printRecord(const FdFile::TextRecordBase* rec) {
-    if (std::string(rec->typeName()) == "A") {
-        auto* r = static_cast<const A*>(rec);
-        std::cout << "  [A] id=" << r->id() << " name=" << r->name << "\n";
-    } else if (std::string(rec->typeName()) == "B") {
-        auto* r = static_cast<const B*>(rec);
-        std::cout << "  [B] id=" << r->id() << " name=" << r->name << " pw=" << r->pw << "\n";
+    if (auto* a = dynamic_cast<const A*>(rec)) {
+        std::cout << "  [A] id=" << a->id() << " name=" << a->name << "\n";
+    } else if (auto* b = dynamic_cast<const B*>(rec)) {
+        std::cout << "  [B] id=" << b->id() << " name=" << b->name << " pw=" << b->pw << "\n";
+    } else {
+        std::cout << "  [Unknown] id=" << rec->id() << "\n";
     }
 }
 
@@ -128,7 +130,38 @@ int main() {
             break;
         }
 
-        case 5: { // Find all type A
+        case 5: { // Find by ID and Type A
+            std::string id;
+            std::cout << "ID: ";
+            std::cin >> id;
+            auto found = repo.findByIdAndType<A>(id, ec);
+            if (ec) {
+                std::cout << "✗ Error: " << ec.message() << "\n";
+            } else if (found) {
+                std::cout << "Found A: id=" << found->id() << " name=" << found->name << "\n";
+            } else {
+                std::cout << "Not found (or type mismatch)\n";
+            }
+            break;
+        }
+
+        case 6: { // Find by ID and Type B
+            std::string id;
+            std::cout << "ID: ";
+            std::cin >> id;
+            auto found = repo.findByIdAndType<B>(id, ec);
+            if (ec) {
+                std::cout << "✗ Error: " << ec.message() << "\n";
+            } else if (found) {
+                std::cout << "Found B: id=" << found->id() << " name=" << found->name
+                          << " pw=" << found->pw << "\n";
+            } else {
+                std::cout << "Not found (or type mismatch)\n";
+            }
+            break;
+        }
+
+        case 7: { // Find all type A
             auto all = repo.findAllByType<A>(ec);
             if (ec) {
                 std::cout << "✗ Error: " << ec.message() << "\n";
@@ -141,7 +174,7 @@ int main() {
             break;
         }
 
-        case 6: { // Find all type B
+        case 8: { // Find all type B
             auto all = repo.findAllByType<B>(ec);
             if (ec) {
                 std::cout << "✗ Error: " << ec.message() << "\n";
@@ -154,7 +187,7 @@ int main() {
             break;
         }
 
-        case 7: { // Delete by ID
+        case 9: { // Delete by ID
             std::string id;
             std::cout << "ID: ";
             std::cin >> id;
@@ -166,7 +199,7 @@ int main() {
             break;
         }
 
-        case 8: { // Delete All
+        case 10: { // Delete All
             if (repo.deleteAll(ec)) {
                 std::cout << "✓ All records deleted\n";
             } else {
@@ -175,7 +208,7 @@ int main() {
             break;
         }
 
-        case 9: { // Count
+        case 11: { // Count
             size_t n = repo.count(ec);
             if (ec) {
                 std::cout << "✗ Error: " << ec.message() << "\n";
@@ -185,7 +218,7 @@ int main() {
             break;
         }
 
-        case 10: { // Exists by ID
+        case 12: { // Exists by ID
             std::string id;
             std::cout << "ID: ";
             std::cin >> id;
