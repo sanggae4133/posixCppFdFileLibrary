@@ -172,7 +172,7 @@ if (!f.append(record, true, ec)) {
 
 ```bash
 # CMake (recommended)
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 cmake --build build -j
 ./build/fdfile_example
 
@@ -369,7 +369,7 @@ if (!f.append(record, true, ec)) {
 
 ```bash
 # CMake (권장)
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 cmake --build build -j
 ./build/fdfile_example
 
