@@ -2,11 +2,10 @@
 /// @file UniformFixedRepositoryImpl.hpp
 /// @brief 모든 레코드가 동일 크기인 고정 길이 저장소 (Template)
 
-#include "../record/FixedRecordBase.hpp"
-#include "../util/FileLockGuard.hpp"
 #include "../util/MmapGuard.hpp"
 #include "../util/UniqueFd.hpp"
 #include "RecordRepository.hpp"
+
 #include <cstring>
 #include <fcntl.h>
 #include <memory>
@@ -15,7 +14,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <unordered_map>
 #include <vector>
 
 namespace FdFile {

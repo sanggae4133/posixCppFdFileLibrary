@@ -2,9 +2,9 @@
 /// @file FixedA.hpp
 /// @brief Strict Fixed Layout 예제 A (Inline Macro)
 
-#include "../../fdFileLib/record/FixedRecordBase.hpp"
-#include "../../fdFileLib/record/Macros.hpp"
-#include <cstdio>
+#include "record/FixedRecordBase.hpp"
+#include "record/Macros.hpp"
+
 #include <cstring>
 #include <string>
 

@@ -2,11 +2,7 @@
 /// @file Macros.hpp
 /// @brief FixedRecordBase 구현을 돕는 매크로 (Variadic & Inline Definition)
 
-#include "FixedRecordBase.hpp"
-#include <cstdio>
 #include <cstring>
-#include <memory>
-#include <string>
 
 // =============================================================================
 // Internal Helpers for Token Pasting

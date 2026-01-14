@@ -3,8 +3,8 @@
 /// @brief 가변 길이 레코드 저장소 구현 (구 FdTextFile)
 
 #include "../record/VariableRecordBase.hpp"
-#include "../util/FileLockGuard.hpp"
 #include "../util/UniqueFd.hpp"
+
 #include "RecordRepository.hpp"
 #include <unordered_map>
 

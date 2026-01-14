@@ -1,6 +1,7 @@
 #include "VariableFileRepositoryImpl.hpp"
 #include "../util/textFormatUtil.hpp"
-#include <algorithm>
+#include "../util/FileLockGuard.hpp"
+
 #include <fcntl.h>
 #include <filesystem>
 #include <sstream>

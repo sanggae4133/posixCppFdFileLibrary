@@ -2,11 +2,9 @@
 /// @file RecordRepository.hpp
 /// @brief Repository 템플릿 인터페이스
 
-#include "../record/RecordBase.hpp"
 #include <memory>
 #include <string>
 #include <system_error>
-#include <type_traits>
 #include <vector>
 
 namespace FdFile {
