@@ -1,15 +1,15 @@
 # fdFileLib library
 
 add_library(fdfile STATIC
-    FdTextFile.cpp
+    repository/VariableFileRepositoryImpl.cpp
 )
 
 target_include_directories(fdfile PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
-# Some older libstdc++ versions require -lstdc++fs for <filesystem>
+# Filesystem check
 include(CheckCXXSourceCompiles)
 set(CMAKE_REQUIRED_LIBRARIES "")
 check_cxx_source_compiles("

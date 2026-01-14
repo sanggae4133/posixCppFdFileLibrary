@@ -3,239 +3,68 @@
 #include <string>
 #include <vector>
 
-#include "examples/records/A.hpp"
-#include "examples/records/B.hpp"
-#include "fdFileLib/FdTextFile.hpp"
+// Records
+#include "records/A.hpp"      // Variable Record
+#include "records/B.hpp"      // Variable Record
+#include "records/FixedA.hpp" // Fixed Record
+#include "records/FixedB.hpp" // Fixed Record
 
-void printMenu() {
-    std::cout << R"(
-=== Repository Menu ===
-1. Save A (id, name)
-2. Save B (id, name, pw)
-3. Find All
-4. Find by ID
-5. Find by ID and Type A
-6. Find by ID and Type B
-7. Find all type A
-8. Find all type B
-9. Delete by ID
-10. Delete All
-11. Count
-12. Exists by ID
-0. Quit
-=======================
-)";
-}
+// Repositories
+#include "repository/UniformFixedRepositoryImpl.hpp"
+#include "repository/VariableFileRepositoryImpl.hpp"
 
-void printRecord(const FdFile::TextRecordBase* rec) {
-    if (auto* a = dynamic_cast<const A*>(rec)) {
-        std::cout << "  [A] id=" << a->id() << " name=" << a->name << "\n";
-    } else if (auto* b = dynamic_cast<const B*>(rec)) {
-        std::cout << "  [B] id=" << b->id() << " name=" << b->name << " pw=" << b->pw << "\n";
-    } else {
-        std::cout << "  [Unknown] id=" << rec->id() << "\n";
-    }
-}
+using namespace FdFile;
 
-int main() {
+void testVariable() {
+    std::cout << "\n=== Testing Variable Repository ===\n";
     std::error_code ec;
 
-    // 프로토타입 등록
-    std::vector<std::unique_ptr<FdFile::TextRecordBase>> protos;
+    std::vector<std::unique_ptr<VariableRecordBase>> protos;
     protos.push_back(std::make_unique<A>());
     protos.push_back(std::make_unique<B>());
 
-    // Repository 생성
-    FdFile::FdTextFile repo("./test/data.txt", std::move(protos), ec);
+    VariableFileRepositoryImpl repo("./test_var.txt", std::move(protos), ec);
     if (ec) {
-        std::cerr << "Failed to open repository: " << ec.message() << "\n";
-        return 1;
+        std::cout << "Repo init failed: " << ec.message() << "\n";
+        return;
     }
 
-    std::cout << "=== FdTextFile Repository CLI ===\n";
+    A a("alice", 1);
+    repo.save(a, ec);
+    std::cout << "Saved A(alice)\n";
 
-    int choice;
-    while (true) {
-        printMenu();
-        std::cout << "선택: ";
-        if (!(std::cin >> choice)) {
-            break;
-        }
+    auto found = repo.findById("1", ec);
+    if (found)
+        std::cout << "Found: " << found->id() << "\n";
 
-        switch (choice) {
-        case 0:
-            std::cout << "Bye!\n";
-            return 0;
+    std::cout << "Count: " << repo.count(ec) << "\n";
+}
 
-        case 1: { // Save A
-            long id;
-            std::string name;
-            std::cout << "ID: ";
-            std::cin >> id;
-            std::cout << "Name: ";
-            std::cin >> name;
-            A a(name, id);
-            if (repo.save(a, ec)) {
-                std::cout << "✓ Saved A: id=" << id << " name=" << name << "\n";
-            } else {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            }
-            break;
-        }
+void testFixed() {
+    std::cout << "\n=== Testing Uniform Fixed Repository ===\n";
+    std::error_code ec;
 
-        case 2: { // Save B
-            long id;
-            std::string name, pw;
-            std::cout << "ID: ";
-            std::cin >> id;
-            std::cout << "Name: ";
-            std::cin >> name;
-            std::cout << "Password: ";
-            std::cin >> pw;
-            B b(name, id, pw);
-            if (repo.save(b, ec)) {
-                std::cout << "✓ Saved B: id=" << id << " name=" << name << "\n";
-            } else {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            }
-            break;
-        }
-
-        case 3: { // Find All
-            auto all = repo.findAll(ec);
-            if (ec) {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            } else {
-                std::cout << "Found " << all.size() << " record(s):\n";
-                for (const auto& rec : all) {
-                    printRecord(rec.get());
-                }
-            }
-            break;
-        }
-
-        case 4: { // Find by ID
-            std::string id;
-            std::cout << "ID: ";
-            std::cin >> id;
-            auto found = repo.findById(id, ec);
-            if (ec) {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            } else if (found) {
-                std::cout << "Found:\n";
-                printRecord(found.get());
-            } else {
-                std::cout << "Not found\n";
-            }
-            break;
-        }
-
-        case 5: { // Find by ID and Type A
-            std::string id;
-            std::cout << "ID: ";
-            std::cin >> id;
-            auto found = repo.findByIdAndType<A>(id, ec);
-            if (ec) {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            } else if (found) {
-                std::cout << "Found A: id=" << found->id() << " name=" << found->name << "\n";
-            } else {
-                std::cout << "Not found (or type mismatch)\n";
-            }
-            break;
-        }
-
-        case 6: { // Find by ID and Type B
-            std::string id;
-            std::cout << "ID: ";
-            std::cin >> id;
-            auto found = repo.findByIdAndType<B>(id, ec);
-            if (ec) {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            } else if (found) {
-                std::cout << "Found B: id=" << found->id() << " name=" << found->name
-                          << " pw=" << found->pw << "\n";
-            } else {
-                std::cout << "Not found (or type mismatch)\n";
-            }
-            break;
-        }
-
-        case 7: { // Find all type A
-            auto all = repo.findAllByType<A>(ec);
-            if (ec) {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            } else {
-                std::cout << "Found " << all.size() << " A record(s):\n";
-                for (const auto& r : all) {
-                    printRecord(r.get());
-                }
-            }
-            break;
-        }
-
-        case 8: { // Find all type B
-            auto all = repo.findAllByType<B>(ec);
-            if (ec) {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            } else {
-                std::cout << "Found " << all.size() << " B record(s):\n";
-                for (const auto& r : all) {
-                    printRecord(r.get());
-                }
-            }
-            break;
-        }
-
-        case 9: { // Delete by ID
-            std::string id;
-            std::cout << "ID: ";
-            std::cin >> id;
-            if (repo.deleteById(id, ec)) {
-                std::cout << "✓ Deleted: id=" << id << "\n";
-            } else {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            }
-            break;
-        }
-
-        case 10: { // Delete All
-            if (repo.deleteAll(ec)) {
-                std::cout << "✓ All records deleted\n";
-            } else {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            }
-            break;
-        }
-
-        case 11: { // Count
-            size_t n = repo.count(ec);
-            if (ec) {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            } else {
-                std::cout << "Count: " << n << "\n";
-            }
-            break;
-        }
-
-        case 12: { // Exists by ID
-            std::string id;
-            std::cout << "ID: ";
-            std::cin >> id;
-            bool exists = repo.existsById(id, ec);
-            if (ec) {
-                std::cout << "✗ Error: " << ec.message() << "\n";
-            } else {
-                std::cout << "exists(" << id << "): " << (exists ? "true" : "false") << "\n";
-            }
-            break;
-        }
-
-        default:
-            std::cout << "잘못된 선택\n";
-            break;
-        }
+    // FixedA 전용 저장소
+    UniformFixedRepositoryImpl<FixedA> repo("./test_fixed.txt", ec);
+    if (ec) {
+        std::cout << "Repo init failed: " << ec.message() << "\n";
+        return;
     }
 
+    FixedA fa("bob", 20, 100);
+    repo.save(fa, ec);
+    std::cout << "Saved FixedA(bob, 100)\n";
+
+    auto found = repo.findById("100", ec);
+    if (found) {
+        std::cout << "Found: name=" << found->name << " age=" << found->age << "\n";
+    }
+
+    std::cout << "Count: " << repo.count(ec) << "\n";
+}
+
+int main() {
+    testVariable();
+    testFixed();
     return 0;
 }

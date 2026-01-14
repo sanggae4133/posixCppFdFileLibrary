@@ -11,3 +11,7 @@ main
 CMakeCache.txt
 CMakeFiles/
 compile_commands.json
+
+# test files
+test_var.txt
+test_fixed.txt
