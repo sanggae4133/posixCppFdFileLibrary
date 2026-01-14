@@ -1,12 +1,13 @@
 #pragma once
 
+#include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <errno.h>
 
 #include <system_error>
 
 namespace FdFile {
+namespace detail {
 
 class FileLockGuard {
 public:
@@ -20,8 +21,7 @@ public:
     FileLockGuard(const FileLockGuard&) = delete;
     FileLockGuard& operator=(const FileLockGuard&) = delete;
 
-    FileLockGuard(FileLockGuard&& other) noexcept
-        : fd_(other.fd_), locked_(other.locked_) {
+    FileLockGuard(FileLockGuard&& other) noexcept : fd_(other.fd_), locked_(other.locked_) {
         other.fd_ = -1;
         other.locked_ = false;
     }
@@ -42,7 +42,10 @@ public:
         unlockIgnore();
         fd_ = fd;
 
-        if (fd_ < 0) { ec = std::make_error_code(std::errc::bad_file_descriptor); return false; }
+        if (fd_ < 0) {
+            ec = std::make_error_code(std::errc::bad_file_descriptor);
+            return false;
+        }
 
         struct flock fl{};
         fl.l_type = (mode == Mode::Shared) ? F_RDLCK : F_WRLCK;
@@ -61,7 +64,8 @@ public:
     }
 
     void unlockIgnore() noexcept {
-        if (!locked_ || fd_ < 0) return;
+        if (!locked_ || fd_ < 0)
+            return;
         struct flock fl{};
         fl.l_type = F_UNLCK;
         fl.l_whence = SEEK_SET;
@@ -74,9 +78,10 @@ public:
 
     bool locked() const noexcept { return locked_; }
 
-private:
+  private:
     int fd_ = -1;
     bool locked_ = false;
 };
 
+} // namespace detail
 } // namespace FdFile

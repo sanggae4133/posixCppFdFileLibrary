@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 namespace FdFile {
+namespace detail {
 
 // Small RAII wrapper for POSIX file descriptors.
 class UniqueFd {
@@ -36,7 +37,8 @@ public:
     }
 
     void reset(int newFd = -1) noexcept {
-        if (fd_ >= 0) ::close(fd_);
+        if (fd_ >= 0)
+            ::close(fd_);
         fd_ = newFd;
     }
 
@@ -44,4 +46,5 @@ private:
     int fd_ = -1;
 };
 
+} // namespace detail
 } // namespace FdFile
