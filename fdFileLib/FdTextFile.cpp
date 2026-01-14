@@ -1,7 +1,7 @@
 #include "FdTextFile.hpp"
 
-#include "textFormatUtil.hpp"
 #include "detail/FileLockGuard.hpp"
+#include "textFormatUtil.hpp"
 
 #include <cstring>
 #include <errno.h>
@@ -14,22 +14,27 @@ namespace FdFile {
 
 namespace fs = std::filesystem;
 
-FdTextFile::FdTextFile(std::string path, std::vector<TypeSpec> types, std::error_code& ec,
-                       int flags, mode_t mode)
-    : path_(std::move(path)), types_(std::move(types)) {
+FdTextFile::FdTextFile(const std::string& path,
+                       std::vector<std::unique_ptr<TextRecordBase>> prototypes, std::error_code& ec)
+    : path_(path) {
     ec.clear();
 
-    // 타입 고정, 중복 방지
-    for (auto& t : types_) {
-        if (!t.factory || t.typeName.empty()) {
+    // 프로토타입 등록
+    for (auto& proto : prototypes) {
+        if (!proto) {
             ec = std::make_error_code(std::errc::invalid_argument);
             return;
         }
-        if (typeMap_.count(t.typeName)) {
+        std::string tname = proto->typeName();
+        if (tname.empty()) {
             ec = std::make_error_code(std::errc::invalid_argument);
             return;
         }
-        typeMap_[t.typeName] = std::move(t.factory);
+        if (prototypes_.count(tname)) {
+            ec = std::make_error_code(std::errc::invalid_argument);
+            return;
+        }
+        prototypes_[tname] = std::move(proto);
     }
 
     // 디렉토리 생성
@@ -53,122 +58,179 @@ FdTextFile::FdTextFile(std::string path, std::vector<TypeSpec> types, std::error
         }
     }
 
+    int flags = O_CREAT | O_RDWR;
 #ifdef O_CLOEXEC
     flags |= O_CLOEXEC;
 #endif
-    fd_.reset(::open(path_.c_str(), flags, mode));
+    fd_.reset(::open(path_.c_str(), flags, 0644));
     if (!fd_) {
         ec = std::error_code(errno, std::generic_category());
         return;
     }
 
-    // ✅ 기존 파일 내용이 등록된 타입/포맷과 맞는지 전체 검증
-    // 하나라도 깨져 있으면 생성 실패로 처리
+    // 기존 파일 내용 검증
     if (!validateExisting(ec)) {
         fd_.reset();
         return;
     }
 }
 
-bool FdTextFile::append(const TextRecordBase& rec, bool doFsync, std::error_code& ec) {
+// =============================================================================
+// Create / Update
+// =============================================================================
+
+bool FdTextFile::save(const TextRecordBase& record, std::error_code& ec) {
     ec.clear();
     if (!ok()) {
         ec = std::make_error_code(std::errc::bad_file_descriptor);
         return false;
     }
 
-    if (typeMap_.find(rec.typeName()) == typeMap_.end()) {
+    // 타입 확인
+    if (prototypes_.find(record.typeName()) == prototypes_.end()) {
         ec = std::make_error_code(std::errc::not_supported);
         return false;
     }
 
-    std::vector<std::pair<std::string, std::pair<bool, std::string>>> fields;
-    rec.toKv(fields);
+    // 이미 존재하는지 확인
+    std::string recordId = record.id();
+    if (existsById(recordId, ec)) {
+        // Update: 전체 재작성
+        auto all = findAll(ec);
+        if (ec)
+            return false;
 
-    std::string line = util::formatLine(rec.typeName(), fields);
-    line.push_back('\n');
-
-    // 우리끼리 tearing 방지(상대가 lock 무시하면 어쩔 수 없음. 대신 read에서 포맷 깨짐 감지)
-    detail::FileLockGuard lk(fd_.get(), detail::FileLockGuard::Mode::Exclusive, ec);
+        // 기존 레코드를 새 레코드로 교체
+        for (auto& r : all) {
+            if (r->id() == recordId) {
+                r = record.clone();
+                break;
+            }
+        }
+        return rewriteAll(all, ec);
+    }
     if (ec)
         return false;
 
-    bool okWrite = false;
-    do {
-        if (::lseek(fd_.get(), 0, SEEK_END) < 0) {
-            ec = std::error_code(errno, std::generic_category());
-            break;
-        }
-        if (!writeAll(line.data(), line.size(), ec))
-            break;
-        if (doFsync && !sync(ec))
-            break;
-        okWrite = true;
-    } while (0);
-    return okWrite;
+    // Insert: append
+    return appendRecord(record, ec);
 }
 
-bool FdTextFile::readAt(off_t offset, std::unique_ptr<TextRecordBase>& out, off_t& nextOffset,
-                        std::error_code& ec) {
+bool FdTextFile::saveAll(const std::vector<const TextRecordBase*>& records, std::error_code& ec) {
     ec.clear();
-    out.reset();
-    nextOffset = offset;
+    for (const auto* rec : records) {
+        if (!rec) {
+            ec = std::make_error_code(std::errc::invalid_argument);
+            return false;
+        }
+        if (!save(*rec, ec))
+            return false;
+    }
+    return true;
+}
+
+// =============================================================================
+// Read
+// =============================================================================
+
+std::vector<std::unique_ptr<TextRecordBase>> FdTextFile::findAll(std::error_code& ec) {
+    ec.clear();
+    std::vector<std::unique_ptr<TextRecordBase>> result;
 
     if (!ok()) {
         ec = std::make_error_code(std::errc::bad_file_descriptor);
-        return false;
+        return result;
     }
 
     detail::FileLockGuard lk(fd_.get(), detail::FileLockGuard::Mode::Shared, ec);
     if (ec)
-        return false;
+        return result;
 
-    std::string line;
-    bool okRead = false;
-    do {
-        // seek가 들어가면 버퍼 기반 리더 상태를 리셋해야 함
-        resetReadBuffer();
-        if (::lseek(fd_.get(), offset, SEEK_SET) < 0) {
-            ec = std::error_code(errno, std::generic_category());
+    resetReadBuffer();
+    if (::lseek(fd_.get(), 0, SEEK_SET) < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return result;
+    }
+
+    while (true) {
+        std::string line;
+        off_t nextOff = 0;
+        if (!readNextRecordLine(line, nextOff, ec)) {
+            if (ec == std::errc::result_out_of_range) {
+                ec.clear(); // EOF
+            }
             break;
         }
 
-        // ✅ 마지막 줄 개행 없어도 허용
-        // ✅ 빈 라인/주석 라인(#...)은 스킵
-        if (!readNextRecordLine(line, nextOffset, ec))
+        auto rec = parseRecord(line, ec);
+        if (ec)
             break;
-
-        okRead = true;
-    } while (0);
-    if (!okRead)
-        return false;
-
-    std::string type;
-    std::unordered_map<std::string, std::pair<bool, std::string>> kv;
-    if (!util::parseLine(line, type, kv, ec))
-        return false;
-
-    auto it = typeMap_.find(type);
-    if (it == typeMap_.end()) {
-        ec = std::make_error_code(std::errc::not_supported);
-        return false;
+        if (rec)
+            result.push_back(std::move(rec));
     }
 
-    auto obj = it->second();
-    if (!obj) {
-        ec = std::make_error_code(std::errc::not_enough_memory);
-        return false;
-    }
-    if (std::string(obj->typeName()) != type) {
-        ec = std::make_error_code(std::errc::invalid_argument);
-        return false;
+    return result;
+}
+
+std::unique_ptr<TextRecordBase> FdTextFile::findById(const std::string& id, std::error_code& ec) {
+    ec.clear();
+
+    auto all = findAll(ec);
+    if (ec)
+        return nullptr;
+
+    for (auto& rec : all) {
+        if (rec->id() == id) {
+            return std::move(rec);
+        }
     }
 
-    if (!obj->fromKv(kv, ec))
+    return nullptr; // Not found (not an error)
+}
+
+// =============================================================================
+// Delete
+// =============================================================================
+
+bool FdTextFile::deleteById(const std::string& id, std::error_code& ec) {
+    ec.clear();
+
+    auto all = findAll(ec);
+    if (ec)
         return false;
 
-    out = std::move(obj);
-    return true;
+    std::vector<std::unique_ptr<TextRecordBase>> remaining;
+    for (auto& rec : all) {
+        if (rec->id() != id) {
+            remaining.push_back(std::move(rec));
+        }
+    }
+
+    return rewriteAll(remaining, ec);
+}
+
+bool FdTextFile::deleteAll(std::error_code& ec) {
+    ec.clear();
+    std::vector<std::unique_ptr<TextRecordBase>> empty;
+    return rewriteAll(empty, ec);
+}
+
+// =============================================================================
+// Utility
+// =============================================================================
+
+size_t FdTextFile::count(std::error_code& ec) {
+    auto all = findAll(ec);
+    if (ec)
+        return 0;
+    return all.size();
+}
+
+bool FdTextFile::existsById(const std::string& id, std::error_code& ec) {
+    auto found = findById(id, ec);
+    if (ec)
+        return false;
+    return found != nullptr;
 }
 
 bool FdTextFile::sync(std::error_code& ec) {
@@ -180,6 +242,94 @@ bool FdTextFile::sync(std::error_code& ec) {
     return true;
 }
 
+// =============================================================================
+// Private methods
+// =============================================================================
+
+bool FdTextFile::appendRecord(const TextRecordBase& record, std::error_code& ec) {
+    ec.clear();
+
+    detail::FileLockGuard lk(fd_.get(), detail::FileLockGuard::Mode::Exclusive, ec);
+    if (ec)
+        return false;
+
+    if (::lseek(fd_.get(), 0, SEEK_END) < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+
+    std::vector<std::pair<std::string, std::pair<bool, std::string>>> fields;
+    record.toKv(fields);
+
+    std::string line = util::formatLine(record.typeName(), fields);
+    line.push_back('\n');
+
+    if (!writeAll(line.data(), line.size(), ec))
+        return false;
+
+    return sync(ec);
+}
+
+bool FdTextFile::rewriteAll(const std::vector<std::unique_ptr<TextRecordBase>>& records,
+                            std::error_code& ec) {
+    ec.clear();
+
+    detail::FileLockGuard lk(fd_.get(), detail::FileLockGuard::Mode::Exclusive, ec);
+    if (ec)
+        return false;
+
+    // Truncate file
+    if (::ftruncate(fd_.get(), 0) < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+    if (::lseek(fd_.get(), 0, SEEK_SET) < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+
+    // Write all records
+    for (const auto& rec : records) {
+        std::vector<std::pair<std::string, std::pair<bool, std::string>>> fields;
+        rec->toKv(fields);
+
+        std::string line = util::formatLine(rec->typeName(), fields);
+        line.push_back('\n');
+
+        if (!writeAll(line.data(), line.size(), ec))
+            return false;
+    }
+
+    return sync(ec);
+}
+
+std::unique_ptr<TextRecordBase> FdTextFile::parseRecord(const std::string& line,
+                                                        std::error_code& ec) {
+    ec.clear();
+
+    std::string type;
+    std::unordered_map<std::string, std::pair<bool, std::string>> kv;
+    if (!util::parseLine(line, type, kv, ec))
+        return nullptr;
+
+    auto it = prototypes_.find(type);
+    if (it == prototypes_.end()) {
+        ec = std::make_error_code(std::errc::not_supported);
+        return nullptr;
+    }
+
+    auto obj = it->second->clone();
+    if (!obj) {
+        ec = std::make_error_code(std::errc::not_enough_memory);
+        return nullptr;
+    }
+
+    if (!obj->fromKv(kv, ec))
+        return nullptr;
+
+    return obj;
+}
+
 bool FdTextFile::validateExisting(std::error_code& ec) {
     ec.clear();
     if (!ok()) {
@@ -187,7 +337,6 @@ bool FdTextFile::validateExisting(std::error_code& ec) {
         return false;
     }
 
-    // 빈 파일이면 OK
     struct stat st{};
     if (::fstat(fd_.get(), &st) < 0) {
         ec = std::error_code(errno, std::generic_category());
@@ -212,7 +361,6 @@ bool FdTextFile::validateExisting(std::error_code& ec) {
             std::string line;
             off_t nextOff = 0;
             if (!readNextRecordLine(line, nextOff, ec)) {
-                // EOF면 정상 종료
                 if (ec == std::errc::result_out_of_range) {
                     ec.clear();
                     okValidate = true;
@@ -220,28 +368,8 @@ bool FdTextFile::validateExisting(std::error_code& ec) {
                 break;
             }
 
-            std::string type;
-            std::unordered_map<std::string, std::pair<bool, std::string>> kv;
-            if (!util::parseLine(line, type, kv, ec))
-                break;
-
-            auto it = typeMap_.find(type);
-            if (it == typeMap_.end()) {
-                ec = std::make_error_code(std::errc::not_supported);
-                break;
-            }
-
-            auto obj = it->second();
-            if (!obj) {
-                ec = std::make_error_code(std::errc::not_enough_memory);
-                break;
-            }
-            if (std::string(obj->typeName()) != type) {
-                ec = std::make_error_code(std::errc::invalid_argument);
-                break;
-            }
-
-            if (!obj->fromKv(kv, ec))
+            auto rec = parseRecord(line, ec);
+            if (ec)
                 break;
         }
     } while (0);
@@ -307,7 +435,6 @@ void FdTextFile::stripCommentOutsideQuotes(std::string& s) {
         }
     }
 
-    // trim right (space/tab/\r)
     while (!s.empty()) {
         char t = s.back();
         if (t == ' ' || t == '\t' || t == '\r')
@@ -340,7 +467,6 @@ bool FdTextFile::readLineRelaxed(std::string& out, off_t& nextOff, std::error_co
     nextOff = bufFilePos_;
 
     while (true) {
-        // 버퍼에 데이터가 없으면 채우기
         if (readBufPos_ >= readBufLen_) {
             ssize_t r = ::read(fd_.get(), readBuf_, sizeof(readBuf_));
             if (r < 0) {
@@ -349,18 +475,17 @@ bool FdTextFile::readLineRelaxed(std::string& out, off_t& nextOff, std::error_co
                 ec = std::error_code(errno, std::generic_category());
                 return false;
             }
-            if (r == 0) { // EOF
+            if (r == 0) {
                 if (out.empty()) {
                     ec = std::make_error_code(std::errc::result_out_of_range);
                     return false;
                 }
-                return true; // 마지막 줄 개행 없음 OK
+                return true;
             }
             readBufLen_ = static_cast<size_t>(r);
             readBufPos_ = 0;
         }
 
-        // '\n' 찾기
         const char* start = readBuf_ + readBufPos_;
         const char* end = readBuf_ + readBufLen_;
         const char* nl =
@@ -374,7 +499,6 @@ bool FdTextFile::readLineRelaxed(std::string& out, off_t& nextOff, std::error_co
             return true;
         }
 
-        // 버퍼 끝까지 모두 라인에 포함
         out.append(start, end);
         size_t consumed = static_cast<size_t>(end - start);
         readBufPos_ += consumed;
