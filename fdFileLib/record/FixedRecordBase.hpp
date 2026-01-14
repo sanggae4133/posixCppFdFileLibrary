@@ -14,11 +14,17 @@
 namespace FdFile {
 
 /// @brief 고정 길이 바이너리 레코드 (CRTP, Zero Vtable Overhead)
-/// @tparam Derived 상속받는 구체 클래스 (CRTP)
+/// @details CRTP(Curiously Recurring Template Pattern)를 사용하여 컴파일 타임에 다형성을 구현한
+/// 고정 길이 레코드 베이스 클래스입니다.
+///          가상 함수 테이블(vtable) 오버헤드 없이 고성능의 직렬화/역직렬화를 지원합니다.
+///          레코드의 레이아웃(필드 배치)은 생성자에서 `defineLayout()`을 통해 정의해야 합니다.
+/// @tparam Derived 상속받는 구체 클래스 (CRTP 파생 클래스)
 template <typename Derived> class FixedRecordBase {
-  public:
-    // Virtual Destructor 제거 (CRTP는 정적 다형성이므로 불필요)
-    // 단, 삭제는 Derived 포인터로 해야 함.
+public:
+    /// @brief 소멸자
+    /// @details CRTP 패턴이므로 가상 소멸자가 아니지만, 일반적으로 Derived 클래스 포인터로
+    /// 관리되므로 안전합니다.
+    ///          메모리 누수를 방지하기 위해 default 소멸자를 명시합니다.
     ~FixedRecordBase() = default;
 
     // =========================================================================
@@ -26,9 +32,16 @@ template <typename Derived> class FixedRecordBase {
     // =========================================================================
 
     /// @brief 전체 레코드 크기 반환
+    /// @return 레코드의 총 바이트 수 (타입, ID, 필드 데이터 포함)
     size_t recordSize() const { return totalSize_; }
 
-    /// @brief 직렬화
+    /// @brief 객체를 바이너리 데이터로 직렬화
+    /// @details 미리 정의된 레이아웃(layoutDefined_)에 따라 Type, ID, Field 데이터를 버퍼에
+    /// 복사합니다.
+    ///          파생 클래스의 `typeName()`, `id()`, `getFieldValue()` 메서드를 정적으로 호출합니다.
+    /// @param[out] buf 직렬화된 데이터를 저장할 버퍼 포인터. 최소 `recordSize()` 만큼의 크기여야
+    /// 합니다.
+    /// @return 직렬화 성공 여부 (true: 성공, false: 레이아웃 미정의 또는 버퍼 크기 부족 등)
     bool serialize(char* buf) const {
         if (!layoutDefined_)
             return false;
@@ -63,7 +76,12 @@ template <typename Derived> class FixedRecordBase {
         return true;
     }
 
-    /// @brief 역직렬화
+    /// @brief 바이너리 데이터를 객체로 역직렬화
+    /// @details 버퍼에서 데이터를 읽어 Type, ID, Field 값을 파싱하고 객체에 설정합니다.
+    ///          파생 클래스의 `setRecordId()`, `setFieldValue()` 메서드를 정적으로 호출합니다.
+    /// @param[in] buf 직렬화된 데이터가 담긴 버퍼 포인터.
+    /// @param[out] ec 에러 발생 시 설정될 에러 코드 (ex: `std::errc::invalid_argument`)
+    /// @return 역직렬화 성공 여부 (true: 성공, false: 실패)
     bool deserialize(const char* buf, std::error_code& ec) {
         if (!layoutDefined_) {
             ec = std::make_error_code(std::errc::invalid_argument);
@@ -93,15 +111,19 @@ template <typename Derived> class FixedRecordBase {
         return true;
     }
 
-  protected:
+protected:
+    /// @brief 필드 정보 구조체
     struct FieldInfo {
-        std::string key;
-        size_t offset;
-        size_t length;
-        bool isString;
+        std::string key; ///< 필드 키 (이름)
+        size_t offset;   ///< 레코드 내 오프셋
+        size_t length;   ///< 필드 길이
+        bool isString;   ///< 문자열 여부 (true: 문자열, false: 숫자)
     };
 
     // Layout Helpers
+
+    /// @brief 레이아웃 정의 시작
+    /// @details 기존 레이아웃 정보를 초기화합니다.
     void defineStart() {
         fields_.clear();
         layoutDefined_ = false;
@@ -109,6 +131,8 @@ template <typename Derived> class FixedRecordBase {
         totalSize_ = 0;
     }
 
+    /// @brief 타입 필드 정의
+    /// @param len 타입 필드의 길이
     void defineType(size_t len) {
         typeOffset_ = totalSize_;
         typeLen_ = len;
@@ -116,6 +140,9 @@ template <typename Derived> class FixedRecordBase {
         formatTemplate_.append(len, '\0');
     }
 
+    /// @brief ID 필드 정의
+    /// @details ID 필드 앞뒤로 JSON 스타일의 구분자(",id:\"", "\"{")를 템플릿에 추가합니다.
+    /// @param len ID 필드의 길이
     void defineId(size_t len) {
         std::string prefix = ",id:\"";
         totalSize_ += prefix.size();
@@ -129,6 +156,11 @@ template <typename Derived> class FixedRecordBase {
         formatTemplate_ += suffix;
     }
 
+    /// @brief 일반 데이터 필드 정의
+    /// @details 필드 키와 값을 구분하는 구분자를 템플릿에 추가하고 레코드 크기를 계산합니다.
+    /// @param key 필드 키 (이름)
+    /// @param valLen 필드 값의 길이
+    /// @param isString 문자열 여부 (true일 경우 값 앞뒤에 따옴표 추가)
     void defineField(const char* key, size_t valLen, bool isString) {
         if (!fields_.empty()) {
             totalSize_ += 1;
@@ -158,21 +190,23 @@ template <typename Derived> class FixedRecordBase {
         }
     }
 
+    /// @brief 레이아웃 정의 종료
+    /// @details JSON 닫는 중괄호("}")를 추가하고 레이아웃 정의를 완료로 표시합니다.
     void defineEnd() {
         totalSize_ += 1;
         formatTemplate_ += "}";
         layoutDefined_ = true;
     }
 
-  private:
-    std::string formatTemplate_;
-    std::vector<FieldInfo> fields_;
-    size_t typeOffset_ = 0;
-    size_t typeLen_ = 0;
-    size_t idOffset_ = 0;
-    size_t idLen_ = 0;
-    size_t totalSize_ = 0;
-    bool layoutDefined_ = false;
+private:
+    std::string formatTemplate_;    ///< 직렬화 기본 템플릿 (미리 계산된 구분자 포함)
+    std::vector<FieldInfo> fields_; ///< 필드 정보 목록
+    size_t typeOffset_ = 0;         ///< 타입 필드 오프셋
+    size_t typeLen_ = 0;            ///< 타입 필드 길이
+    size_t idOffset_ = 0;           ///< ID 필드 오프셋
+    size_t idLen_ = 0;              ///< ID 필드 길이
+    size_t totalSize_ = 0;          ///< 전체 레코드 크기
+    bool layoutDefined_ = false;    ///< 레이아웃 정의 완료 여부
 };
 
 } // namespace FdFile
