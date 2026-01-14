@@ -1,0 +1,9 @@
+.vscode/
+.idea/
+.DS_Store
+
+test/
+*.out
+
+CMakeCache.txt
+CMakeFiles/
