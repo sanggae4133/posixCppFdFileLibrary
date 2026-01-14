@@ -1,57 +1,58 @@
 # PosixCppFdFileLibrary (FdFileLib)
 
-A high-performance C++ file repository library using POSIX APIs (`open`, `read`, `write`, `fsync`) and `mmap` for efficient I/O. Supports both **Variable-Length (JSON-like)** and **Strict Fixed-Length (Binary)** record formats.
+A high-performance C++17 file repository library using POSIX APIs (`open`, `read`, `write`, `fsync`, `flock`) and `mmap` for efficient I/O. Supports both **Variable-Length (JSON-like)** and **Strict Fixed-Length (Binary)** record formats.
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| **High Performance** | Direct POSIX I/O with `mmap` for O(1) random access on fixed-length records |
-| **Zero Vtable Overhead** | CRTP (Curiously Recurring Template Pattern) eliminates virtual function costs |
-| **C++17 Tuple-Based** | Modern field metadata system using `std::tuple` and fold expressions |
-| **RAII Safety** | Automatic resource cleanup for file descriptors and memory mappings |
-| **Upsert Semantics** | `save()` automatically inserts or updates based on record ID |
-| **GoogleTest Integration** | Comprehensive unit tests with CTest support |
+| **High Performance** | Direct POSIX I/O with `mmap` for O(1) random access |
+| **O(1) ID Lookup** | Internal hash map cache for blazing fast `findById()` |
+| **Zero Vtable Overhead** | CRTP (Curiously Recurring Template Pattern) for fixed records |
+| **C++17 Tuple-Based** | Modern field metadata using `std::tuple` and fold expressions |
+| **RAII Safety** | Automatic cleanup for FD, mmap, and file locks |
+| **External Modification Detection** | Auto-reload when external process modifies file |
+| **File Locking** | `fcntl` based shared/exclusive locks for concurrency |
+| **Upsert Semantics** | `save()` automatically inserts or updates |
+| **48 Unit Tests** | Comprehensive GoogleTest coverage |
 
 ## Project Structure
 
 ```
 posixCppFdFileLibrary/
-├── CMakeLists.txt              # Root CMake (includes GoogleTest)
-├── compile.sh                  # Build script
-├── run.sh                      # Run example script
+├── CMakeLists.txt                  # Root CMake (includes GoogleTest v1.14)
+├── compile.sh                      # Build script
+├── run.sh                          # Run example
 │
-├── fdFileLib/                  # Core Library
+├── fdFileLib/                      # Core Library
 │   ├── CMakeLists.txt
 │   ├── record/
-│   │   ├── RecordBase.hpp          # Base interface
-│   │   ├── VariableRecordBase.hpp  # Variable-length (Virtual)
-│   │   ├── FixedRecordBase.hpp     # Fixed-length (CRTP)
-│   │   └── FieldMeta.hpp           # C++17 tuple-based field metadata
+│   │   ├── RecordBase.hpp              # Base interface
+│   │   ├── VariableRecordBase.hpp      # Variable-length (Virtual)
+│   │   ├── FixedRecordBase.hpp         # Fixed-length (CRTP Template)
+│   │   └── FieldMeta.hpp               # C++17 tuple-based field metadata
 │   ├── repository/
 │   │   ├── RecordRepository.hpp            # Repository interface
 │   │   ├── VariableFileRepositoryImpl.hpp  # Variable-length repo
 │   │   ├── VariableFileRepositoryImpl.cpp
 │   │   └── UniformFixedRepositoryImpl.hpp  # Fixed-length repo (Header-only)
 │   └── util/
-│       ├── UniqueFd.hpp        # RAII file descriptor
-│       ├── MmapGuard.hpp       # RAII mmap wrapper
-│       ├── FileLockGuard.hpp   # File locking
-│       └── textFormatUtil.hpp  # JSON-like parsing/formatting
+│       ├── UniqueFd.hpp            # RAII file descriptor
+│       ├── MmapGuard.hpp           # RAII mmap wrapper
+│       ├── FileLockGuard.hpp       # RAII fcntl file locking
+│       └── textFormatUtil.hpp      # JSON-like parsing/formatting
 │
-├── examples/                   # Usage Examples
-│   ├── main.cpp                # Comprehensive demo
+├── examples/                       # Usage Examples
+│   ├── main.cpp                    # Comprehensive demo
 │   └── records/
-│       ├── FixedA.hpp          # Fixed record example A
-│       ├── FixedB.hpp          # Fixed record example B
-│       ├── A.hpp               # Variable record example A
-│       └── B.hpp               # Variable record example B
+│       ├── FixedA.hpp, FixedB.hpp  # Fixed record examples
+│       └── A.hpp, B.hpp            # Variable record examples
 │
-└── tests/                      # GoogleTest Unit Tests
+└── tests/                          # GoogleTest Unit Tests (48 tests)
     ├── CMakeLists.txt
-    ├── FixedRecordTest.cpp     # 14 tests
-    ├── VariableRecordTest.cpp  # 11 tests
-    └── UtilTest.cpp            # 17 tests
+    ├── FixedRecordTest.cpp         # 18 tests (incl. external mod)
+    ├── VariableRecordTest.cpp      # 11 tests
+    └── UtilTest.cpp                # 17 tests
 ```
 
 ---
@@ -59,37 +60,31 @@ posixCppFdFileLibrary/
 ## Getting Started
 
 ### Prerequisites
-- **C++17** compliant compiler (GCC 7+, Clang 5+, MSVC 19.14+)
+- **C++17** compiler (GCC 7+, Clang 5+, Apple Clang 10+)
 - **CMake** 3.16+
 - **POSIX** environment (Linux/macOS)
 
 ### Build
 
 ```bash
-# Clone and build
 git clone <repo-url>
 cd posixCppFdFileLibrary
 
-# Build (GoogleTest will be downloaded automatically)
 mkdir build && cd build
 cmake ..
 cmake --build . -j
 
-# Or use the provided script
+# Or use the script
 ./compile.sh
 ```
 
 ### Run Tests
 
 ```bash
-# Run all 42 unit tests
 cd build && ctest --output-on-failure
 
-# Run specific test suite
-./build/fdfile_tests --gtest_filter="FixedARepositoryTest.*"
-
-# Run specific test
-./build/fdfile_tests --gtest_filter="VariableRepositoryTest.UpdateExistingRecord"
+# Run specific suite
+./fdfile_tests --gtest_filter="ExternalModificationTest.*"
 ```
 
 ### Run Example
@@ -102,15 +97,22 @@ cd build && ctest --output-on-failure
 
 ---
 
-# [English] Usage Guide
+# [English] Complete Usage Guide
 
 ## 1. Fixed-Length Records (Recommended)
 
-Fixed-length records provide **O(1) read/write by index**, **data integrity**, and **zero virtual function overhead**. Ideal for high-frequency data storage.
+Fixed-length records are stored in binary format with `mmap` for maximum performance.
 
-### Step 1: Define Your Record Class
+### Key Features
 
-Inherit from `FdFile::FixedRecordBase<T>` (CRTP pattern) and use the `FD_RECORD_IMPL` macro.
+| Feature | Implementation |
+|---------|----------------|
+| **O(1) Lookup** | Internal `unordered_map<id, index>` cache |
+| **External Mod Detection** | `fstat()` checks mtime/size on every operation |
+| **File Locking** | Shared lock (read), Exclusive lock (write) |
+| **Auto Cache Rebuild** | On external file change, cache auto-refreshes |
+
+### Step 1: Define Your Record
 
 ```cpp
 #pragma once
@@ -120,90 +122,87 @@ Inherit from `FdFile::FixedRecordBase<T>` (CRTP pattern) and use the `FD_RECORD_
 
 class User : public FdFile::FixedRecordBase<User> {
 public:
-    char name[20];    // Fixed 20 bytes for name
-    int64_t age;      // 19 digits (padded with zeros)
+    char name[20];    // Fixed 20 bytes
+    int64_t age;      // 19 digits (zero-padded)
 
 private:
-    // Define field metadata as a tuple
     auto fields() const {
         return std::make_tuple(
-            FD_STR(name),  // String field
-            FD_NUM(age)    // Numeric field (int64_t, 19 digits)
+            FD_STR(name),  // String field macro
+            FD_NUM(age)    // Numeric field macro
         );
     }
 
-    // Initialize members to zero
     void initMembers() {
         std::memset(name, 0, sizeof(name));
         age = 0;
     }
 
-    // Generate common methods (constructor, getId, setId, typeName, etc.)
-    // Parameters: ClassName, TypeName, TypeLength, IdLength
+    // Generates: constructor, getId(), setId(), typeName(), etc.
     FD_RECORD_IMPL(User, "User", 10, 10)
 
 public:
-    // Custom constructor (optional but recommended)
     User(const char* n, int64_t a, const char* id) {
         initMembers();
         if (n) std::strncpy(name, n, sizeof(name));
         age = a;
         setId(id);
-        defineLayout();  // Must call in custom constructor
+        defineLayout();
     }
 };
 ```
 
-### Step 2: Use the Repository
+### Step 2: Use Repository
 
 ```cpp
 #include "repository/UniformFixedRepositoryImpl.hpp"
 
 int main() {
     std::error_code ec;
-    
-    // Create repository (file will be created if it doesn't exist)
     FdFile::UniformFixedRepositoryImpl<User> repo("users.db", ec);
-    if (ec) {
-        std::cerr << "Init failed: " << ec.message() << "\n";
-        return 1;
-    }
+    if (ec) return 1;
 
     // INSERT
     User alice("Alice", 30, "001");
-    User bob("Bob", 25, "002");
     repo.save(alice, ec);
-    repo.save(bob, ec);
 
-    // UPDATE (same ID = update)
+    // UPDATE (same ID)
     alice.age = 31;
-    repo.save(alice, ec);  // Updates existing record
+    repo.save(alice, ec);  // Updates in-place
 
-    // FIND BY ID
+    // FIND BY ID (O(1) cache lookup)
     auto found = repo.findById("001", ec);
     if (found) {
-        std::cout << "Name: " << found->name << ", Age: " << found->age << "\n";
+        std::cout << found->name << ", " << found->age << "\n";
     }
 
-    // FIND ALL
-    auto all = repo.findAll(ec);
-    for (const auto& user : all) {
-        std::cout << user->name << " (id=" << user->getId() << ")\n";
-    }
+    // OTHER OPERATIONS
+    auto all = repo.findAll(ec);           // Get all
+    bool exists = repo.existsById("001");  // Check existence
+    size_t cnt = repo.count(ec);           // Count
+    repo.deleteById("001", ec);            // Delete one
+    repo.deleteAll(ec);                    // Delete all
+}
+```
 
-    // EXISTS
-    bool exists = repo.existsById("001", ec);  // true
+### External Modification Support
 
-    // COUNT
-    size_t count = repo.count(ec);  // 2
+```cpp
+// Process A saves a record
+repo.save(alice, ec);
 
-    // DELETE BY ID
-    repo.deleteById("002", ec);  // Deletes Bob
+// Process B (or vim) modifies the file externally
+// ...
 
-    // DELETE ALL
-    repo.deleteAll(ec);  // Clears all records
+// Process A reads - automatically detects change and reloads
+auto found = repo.findById("001", ec);  // Cache is auto-rebuilt
+```
 
-    return 0;
+If external modification corrupts the file (invalid format), an error is returned:
+```cpp
+auto found = repo.findById("001", ec);
+if (ec) {
+    // ec contains error code (e.g., invalid_argument for corrupt file)
 }
 ```
 
@@ -211,48 +210,25 @@ int main() {
 
 ## 2. Variable-Length Records
 
-Flexible JSON-like format suitable for configuration files or infrequent access patterns. Uses virtual function polymorphism.
+JSON-like format for flexibility. Uses virtual polymorphism.
 
 ```cpp
-#include "record/VariableRecordBase.hpp"
-
 class Config : public FdFile::VariableRecordBase {
 public:
-    std::string key;
-    std::string value;
-
-    Config() = default;
-    Config(std::string k, std::string v) : key(std::move(k)), value(std::move(v)) {}
-
+    std::string key, value;
+    
     std::string id() const override { return key; }
     const char* typeName() const override { return "Config"; }
-
-    std::unique_ptr<FdFile::RecordBase> clone() const override {
+    std::unique_ptr<RecordBase> clone() const override {
         return std::make_unique<Config>(*this);
     }
-
-    void toKv(std::vector<std::pair<std::string, std::pair<bool, std::string>>>& out) const override {
-        out.clear();
-        out.push_back({"key", {true, key}});
-        out.push_back({"value", {true, value}});
-    }
-
-    bool fromKv(const std::unordered_map<std::string, std::pair<bool, std::string>>& kv,
-                std::error_code& ec) override {
-        auto k = kv.find("key");
-        auto v = kv.find("value");
-        if (k == kv.end() || v == kv.end()) return false;
-        key = k->second.second;
-        value = v->second.second;
-        return true;
-    }
+    // Implement toKv() and fromKv() for serialization
 };
 
-// Usage requires prototype instances for deserialization
-std::vector<std::unique_ptr<VariableRecordBase>> prototypes;
-prototypes.push_back(std::make_unique<Config>());
-
-FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(prototypes), ec);
+// Requires prototype instances
+std::vector<std::unique_ptr<VariableRecordBase>> protos;
+protos.push_back(std::make_unique<Config>());
+FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(protos), ec);
 ```
 
 ---
@@ -263,33 +239,40 @@ FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(prototypes), ec)
 
 | Method | Description | Complexity |
 |--------|-------------|------------|
-| `save(const T& record, std::error_code& ec)` | Insert or update record | O(N) search + O(1) write |
-| `findById(const std::string& id, std::error_code& ec)` | Find record by ID | O(N) |
-| `findAll(std::error_code& ec)` | Get all records | O(N) |
-| `existsById(const std::string& id, std::error_code& ec)` | Check if ID exists | O(N) |
-| `deleteById(const std::string& id, std::error_code& ec)` | Delete record by ID | O(N) |
-| `deleteAll(std::error_code& ec)` | Delete all records | O(1) |
-| `count(std::error_code& ec)` | Get record count | O(1) |
+| `save(record, ec)` | Upsert | O(1) cache + O(1) write |
+| `findById(id, ec)` | Find by ID | **O(1)** (cache hit) |
+| `findAll(ec)` | Get all | O(N) |
+| `existsById(id, ec)` | Check exists | **O(1)** |
+| `deleteById(id, ec)` | Delete one | O(N) shift |
+| `deleteAll(ec)` | Clear all | O(1) |
+| `count(ec)` | Count | O(1) |
 
 ### Macros
 
 | Macro | Description |
 |-------|-------------|
-| `FD_STR(member)` | Define a string field (char array) |
-| `FD_NUM(member)` | Define a numeric field (int64_t, 19 digits) |
-| `FD_RECORD_IMPL(Class, TypeName, TypeLen, IdLen)` | Generate common record methods |
+| `FD_STR(member)` | String field (char array) |
+| `FD_NUM(member)` | Numeric field (int64_t, 19 digits) |
+| `FD_RECORD_IMPL(Class, Type, TypeLen, IdLen)` | Generate record methods |
 
 ---
 
-# [Korean] 사용 가이드
+# [Korean] 전체 사용 가이드
 
 ## 1. 고정 길이 레코드 (권장)
 
-고정 길이 레코드는 **O(1) 인덱스 기반 읽기/쓰기**, **데이터 무결성**, **Zero Virtual Function Overhead**를 제공합니다. 고빈도 데이터 저장에 최적화되어 있습니다.
+고정 길이 레코드는 `mmap`을 사용한 바이너리 형식으로 최대 성능을 제공합니다.
 
-### 단계 1: 레코드 클래스 정의
+### 주요 기능
 
-`FdFile::FixedRecordBase<T>`를 상속받고 (CRTP 패턴) `FD_RECORD_IMPL` 매크로를 사용합니다.
+| 기능 | 구현 |
+|------|------|
+| **O(1) 조회** | 내부 `unordered_map<id, index>` 캐시 |
+| **외부 수정 감지** | 모든 작업 전 `fstat()`으로 mtime/size 확인 |
+| **파일 잠금** | 읽기(Shared lock), 쓰기(Exclusive lock) |
+| **자동 캐시 리빌드** | 외부 파일 변경 시 캐시 자동 갱신 |
+
+### 단계 1: 레코드 정의
 
 ```cpp
 #pragma once
@@ -299,36 +282,32 @@ FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(prototypes), ec)
 
 class User : public FdFile::FixedRecordBase<User> {
 public:
-    char name[20];    // 이름 (20바이트 고정)
-    int64_t age;      // 나이 (19자리, 0으로 패딩)
+    char name[20];    // 20바이트 고정
+    int64_t age;      // 19자리 (0으로 패딩)
 
 private:
-    // 필드 메타데이터를 튜플로 정의
     auto fields() const {
         return std::make_tuple(
-            FD_STR(name),  // 문자열 필드
-            FD_NUM(age)    // 숫자 필드 (int64_t, 19자리)
+            FD_STR(name),  // 문자열 필드 매크로
+            FD_NUM(age)    // 숫자 필드 매크로
         );
     }
 
-    // 멤버 초기화
     void initMembers() {
         std::memset(name, 0, sizeof(name));
         age = 0;
     }
 
-    // 공통 메서드 자동 생성 (생성자, getId, setId, typeName 등)
-    // 매개변수: 클래스명, 타입명, 타입길이, ID길이
+    // 자동 생성: 생성자, getId(), setId(), typeName() 등
     FD_RECORD_IMPL(User, "User", 10, 10)
 
 public:
-    // 커스텀 생성자 (선택 사항이지만 권장)
     User(const char* n, int64_t a, const char* id) {
         initMembers();
         if (n) std::strncpy(name, n, sizeof(name));
         age = a;
         setId(id);
-        defineLayout();  // 커스텀 생성자에서 반드시 호출
+        defineLayout();
     }
 };
 ```
@@ -340,49 +319,50 @@ public:
 
 int main() {
     std::error_code ec;
-    
-    // 리포지토리 생성 (파일이 없으면 자동 생성)
     FdFile::UniformFixedRepositoryImpl<User> repo("users.db", ec);
-    if (ec) {
-        std::cerr << "초기화 실패: " << ec.message() << "\n";
-        return 1;
-    }
+    if (ec) return 1;
 
     // 삽입 (INSERT)
     User alice("Alice", 30, "001");
-    User bob("Bob", 25, "002");
     repo.save(alice, ec);
-    repo.save(bob, ec);
 
-    // 수정 (UPDATE) - 같은 ID면 업데이트
+    // 수정 (UPDATE) - 같은 ID
     alice.age = 31;
-    repo.save(alice, ec);  // 기존 레코드 업데이트
+    repo.save(alice, ec);  // 제자리 업데이트
 
-    // ID로 조회 (FIND BY ID)
+    // ID로 조회 (O(1) 캐시 조회)
     auto found = repo.findById("001", ec);
     if (found) {
-        std::cout << "이름: " << found->name << ", 나이: " << found->age << "\n";
+        std::cout << found->name << ", " << found->age << "\n";
     }
 
-    // 전체 조회 (FIND ALL)
-    auto all = repo.findAll(ec);
-    for (const auto& user : all) {
-        std::cout << user->name << " (id=" << user->getId() << ")\n";
-    }
+    // 기타 작업
+    auto all = repo.findAll(ec);           // 전체 조회
+    bool exists = repo.existsById("001");  // 존재 확인
+    size_t cnt = repo.count(ec);           // 개수
+    repo.deleteById("001", ec);            // 하나 삭제
+    repo.deleteAll(ec);                    // 전체 삭제
+}
+```
 
-    // 존재 여부 확인 (EXISTS)
-    bool exists = repo.existsById("001", ec);  // true
+### 외부 수정 지원
 
-    // 개수 조회 (COUNT)
-    size_t count = repo.count(ec);  // 2
+```cpp
+// 프로세스 A가 레코드 저장
+repo.save(alice, ec);
 
-    // ID로 삭제 (DELETE BY ID)
-    repo.deleteById("002", ec);  // Bob 삭제
+// 프로세스 B (또는 vim)가 파일 직접 수정
+// ...
 
-    // 전체 삭제 (DELETE ALL)
-    repo.deleteAll(ec);  // 모든 레코드 삭제
+// 프로세스 A가 읽기 - 변경 자동 감지 후 리로드
+auto found = repo.findById("001", ec);  // 캐시 자동 리빌드
+```
 
-    return 0;
+외부 수정이 파일을 손상시킨 경우 (잘못된 형식), 에러가 반환됩니다:
+```cpp
+auto found = repo.findById("001", ec);
+if (ec) {
+    // ec에 에러 코드 포함 (예: invalid_argument - 손상된 파일)
 }
 ```
 
@@ -390,34 +370,25 @@ int main() {
 
 ## 2. 가변 길이 레코드
 
-설정 파일이나 접근 빈도가 낮은 데이터에 적합한 유연한 JSON 스타일 형식입니다. 가상 함수 다형성을 사용합니다.
+유연성을 위한 JSON 스타일 형식. 가상 다형성 사용.
 
 ```cpp
-#include "record/VariableRecordBase.hpp"
-
 class Config : public FdFile::VariableRecordBase {
 public:
-    std::string key;
-    std::string value;
-
-    Config() = default;
-    Config(std::string k, std::string v) : key(std::move(k)), value(std::move(v)) {}
-
+    std::string key, value;
+    
     std::string id() const override { return key; }
     const char* typeName() const override { return "Config"; }
-
-    std::unique_ptr<FdFile::RecordBase> clone() const override {
+    std::unique_ptr<RecordBase> clone() const override {
         return std::make_unique<Config>(*this);
     }
-
-    // toKv(), fromKv() 구현 필요...
+    // toKv()와 fromKv() 구현 필요
 };
 
-// 역직렬화를 위한 프로토타입 인스턴스 필요
-std::vector<std::unique_ptr<VariableRecordBase>> prototypes;
-prototypes.push_back(std::make_unique<Config>());
-
-FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(prototypes), ec);
+// 프로토타입 인스턴스 필요
+std::vector<std::unique_ptr<VariableRecordBase>> protos;
+protos.push_back(std::make_unique<Config>());
+FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(protos), ec);
 ```
 
 ---
@@ -428,85 +399,75 @@ FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(prototypes), ec)
 
 | 메서드 | 설명 | 복잡도 |
 |--------|------|--------|
-| `save(const T& record, std::error_code& ec)` | 레코드 삽입 또는 업데이트 | O(N) 검색 + O(1) 쓰기 |
-| `findById(const std::string& id, std::error_code& ec)` | ID로 레코드 조회 | O(N) |
-| `findAll(std::error_code& ec)` | 모든 레코드 조회 | O(N) |
-| `existsById(const std::string& id, std::error_code& ec)` | ID 존재 여부 확인 | O(N) |
-| `deleteById(const std::string& id, std::error_code& ec)` | ID로 레코드 삭제 | O(N) |
-| `deleteAll(std::error_code& ec)` | 모든 레코드 삭제 | O(1) |
-| `count(std::error_code& ec)` | 레코드 개수 조회 | O(1) |
+| `save(record, ec)` | Upsert | O(1) 캐시 + O(1) 쓰기 |
+| `findById(id, ec)` | ID로 조회 | **O(1)** (캐시 히트) |
+| `findAll(ec)` | 전체 조회 | O(N) |
+| `existsById(id, ec)` | 존재 확인 | **O(1)** |
+| `deleteById(id, ec)` | 하나 삭제 | O(N) shift |
+| `deleteAll(ec)` | 전체 삭제 | O(1) |
+| `count(ec)` | 개수 | O(1) |
 
 ### 매크로
 
 | 매크로 | 설명 |
 |--------|------|
-| `FD_STR(member)` | 문자열 필드 정의 (char 배열) |
-| `FD_NUM(member)` | 숫자 필드 정의 (int64_t, 19자리) |
-| `FD_RECORD_IMPL(Class, TypeName, TypeLen, IdLen)` | 공통 레코드 메서드 생성 |
+| `FD_STR(member)` | 문자열 필드 (char 배열) |
+| `FD_NUM(member)` | 숫자 필드 (int64_t, 19자리) |
+| `FD_RECORD_IMPL(Class, Type, TypeLen, IdLen)` | 레코드 메서드 생성 |
 
 ---
 
-## Testing
+## Testing (테스트)
 
-### Unit Tests (GoogleTest)
-
-이 프로젝트는 **GoogleTest**를 사용한 42개의 단위 테스트를 포함합니다:
+### Unit Tests (단위 테스트)
 
 | Test File | Tests | Description |
 |-----------|-------|-------------|
-| `FixedRecordTest.cpp` | 14 | FixedA/FixedB CRUD 테스트 |
-| `VariableRecordTest.cpp` | 11 | Variable record (A/B) CRUD 테스트 |
-| `UtilTest.cpp` | 17 | textFormatUtil 함수 테스트 |
+| `FixedRecordTest.cpp` | 18 | CRUD + 외부 수정 감지 |
+| `VariableRecordTest.cpp` | 11 | 가변 레코드 CRUD |
+| `UtilTest.cpp` | 17 | 유틸리티 함수 |
 
 ```bash
-# 모든 테스트 실행
+# 전체 테스트 실행
 cd build && ctest --output-on-failure
 
-# 특정 테스트 스위트만 실행
-./fdfile_tests --gtest_filter="FixedARepositoryTest.*"
+# 결과: 100% tests passed, 0 tests failed out of 48
 ```
 
 ---
 
-## Architecture
+## Architecture (아키텍처)
 
-### CRTP Pattern (Zero Overhead Polymorphism)
+### CRTP Pattern
 
 ```
-FixedRecordBase<Derived>
+FixedRecordBase<Derived>   ← Template base
         ↑
-        │ CRTP Inheritance
+        │ static_cast<Derived*>(this)
         │
-      User (Derived)
+      User                 ← Concrete type
 ```
 
-- No virtual function table (vtable)
-- Compile-time polymorphism via `static_cast<Derived*>(this)`
-- All method calls are resolved at compile time
+- No virtual function table (vtable 없음)
+- Compile-time polymorphism (컴파일 타임 다형성)
 
-### Record Lifecycle
+### ID Cache Flow
 
-```mermaid
-sequenceDiagram
-    participant App
-    participant Repo as UniformFixedRepositoryImpl
-    participant Mmap as MmapGuard
-    participant File
-
-    App->>Repo: save(record, ec)
-    Repo->>Repo: findIdxById(record.getId())
-    alt ID exists
-        Repo->>Mmap: serialize to existing slot
-    else ID not found
-        Repo->>File: ftruncate (extend file)
-        Repo->>Mmap: remap file
-        Repo->>Mmap: serialize to new slot
-    end
-    Mmap->>File: msync (write to disk)
+```
+findById("001")
+    ↓
+checkAndRefreshCache()
+    ├── fstat() → mtime changed?
+    │       ├── Yes → remapFile() + rebuildCache()
+    │       └── No  → use existing cache
+    ↓
+idCache_.find("001") → O(1) lookup
+    ↓
+return record at index
 ```
 
 ---
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file.
+MIT License - See [LICENSE](LICENSE)
