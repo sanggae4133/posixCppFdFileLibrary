@@ -16,7 +16,7 @@ namespace FdFile {
 /// 제공합니다.
 ///          이 클래스를 상속받아 구체적인 가변 길이 레코드를 구현해야 합니다.
 class VariableRecordBase : public RecordBase {
-public:
+  public:
     /// @brief 가상 소멸자
     /// @details 다형성을 위해 가상 소멸자를 기본값으로 정의합니다.
     virtual ~VariableRecordBase() = default;
@@ -40,6 +40,11 @@ public:
     /// @return 역직렬화 성공 여부 (true: 성공, false: 실패)
     virtual bool fromKv(const std::unordered_map<std::string, std::pair<bool, std::string>>& kv,
                         std::error_code& ec) = 0;
+
+    /// @brief 객체 복제 (Deep Copy)
+    /// @details 현재 객체의 복사본을 생성하여 반환합니다.
+    /// @return 복제된 객체를 관리하는 std::unique_ptr
+    virtual std::unique_ptr<RecordBase> clone() const = 0;
 };
 
 } // namespace FdFile

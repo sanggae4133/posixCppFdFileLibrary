@@ -1,38 +1,39 @@
 #pragma once
 /// @file FixedA.hpp
-/// @brief Strict Fixed Layout 예제 A (Inline Macro)
+/// @brief 고정 길이 레코드 예제 A (간소화된 매크로 사용)
 
+#include "record/FieldMeta.hpp"
 #include "record/FixedRecordBase.hpp"
-#include "record/Macros.hpp"
 
 #include <cstring>
-#include <string>
 
+/// @brief 고정 길이 레코드 예제 A
 class FixedA : public FdFile::FixedRecordBase<FixedA> {
   public:
-    char name[10];
-    long age;
+    char name[10]; ///< 이름 (10바이트)
+    int64_t age;   ///< 나이 (19자리 고정)
 
-    // 인라인 정의 및 기본 생성자 자동 생성
-    FD_FIXED_DEFS(FixedA, "FixedA", 10, 10, FD_FIELD(name, name, 10, true),
-                  FD_FIELD(age, age, 5, false))
+  private:
+    /// @brief 필드 메타데이터 튜플
+    auto fields() const { return std::make_tuple(FD_STR(name), FD_NUM(age)); }
 
-    // 커스텀 생성자 (기본 생성자는 매크로가 이미 생성함)
-    FixedA(const char* n, long a, long idVal) {
+    /// @brief 멤버 초기화
+    void initMembers() {
         std::memset(name, 0, sizeof(name));
-        if (n)
-            std::strncpy(name, n, sizeof(name));
-        age = a;
-        setRecordId(std::to_string(idVal));
-        defineLayout();
+        age = 0;
     }
 
-    FixedA(const char* n, long a, const char* idStr) {
-        std::memset(name, 0, sizeof(name));
+    // 공통 메서드 자동 생성
+    FD_RECORD_IMPL(FixedA, "FixedA", 10, 10)
+
+  public:
+    /// @brief 커스텀 생성자
+    FixedA(const char* n, int64_t a, const char* idStr) {
+        initMembers();
         if (n)
             std::strncpy(name, n, sizeof(name));
         age = a;
-        setRecordId(std::string(idStr));
+        setId(idStr);
         defineLayout();
     }
 };

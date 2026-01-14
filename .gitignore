@@ -15,3 +15,5 @@ compile_commands.json
 # test files
 test_var.txt
 test_fixed.txt
+test_fixed_a.txt
+test_fixed_b.txt

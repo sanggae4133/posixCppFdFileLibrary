@@ -18,7 +18,11 @@ namespace FdFile {
 ///          레코드의 레이아웃(필드 배치)은 생성자에서 `defineLayout()`을 통해 정의해야 합니다.
 /// @tparam Derived 상속받는 구체 클래스 (CRTP 파생 클래스)
 template <typename Derived> class FixedRecordBase {
-public:
+    // Allow FieldMeta utilities to access protected members
+    template <typename Base, typename Tuple>
+    friend void defineFieldsFromTuple(Base* base, const Tuple& fields);
+
+  public:
     /// @brief 소멸자
     /// @details CRTP 패턴이므로 가상 소멸자가 아니지만, 일반적으로 Derived 클래스 포인터로
     /// 관리되므로 안전합니다.
@@ -53,8 +57,8 @@ public:
         size_t copyLen = std::min(tNameStr.size(), typeLen_);
         std::memcpy(buf + typeOffset_, tNameStr.data(), copyLen);
 
-        // 3. ID 덮어쓰기 (Derived::id() 호출)
-        std::string idStr = static_cast<const Derived*>(this)->id();
+        // 3. ID 덮어쓰기 (Derived::getId() 호출)
+        std::string idStr = static_cast<const Derived*>(this)->getId();
         copyLen = std::min(idStr.size(), idLen_);
         std::memcpy(buf + idOffset_, idStr.data(), copyLen);
 
@@ -66,8 +70,8 @@ public:
                 return false;
 
             std::memset(valBuf, 0, f.length);
-            // Derived::getFieldValue 호출
-            static_cast<const Derived*>(this)->getFieldValue(i, valBuf);
+            // Derived::__getFieldValue 호출
+            static_cast<const Derived*>(this)->__getFieldValue(i, valBuf);
 
             std::memcpy(buf + f.offset, valBuf, f.length);
         }
@@ -93,8 +97,8 @@ public:
             return false;
         std::memset(tmpBuf, 0, sizeof(tmpBuf));
         std::memcpy(tmpBuf, buf + idOffset_, idLen_);
-        // Derived::setRecordId 호출
-        static_cast<Derived*>(this)->setRecordId(std::string(tmpBuf));
+        // Derived::setId 호출
+        static_cast<Derived*>(this)->setId(std::string(tmpBuf));
 
         // 2. 필드 읽기
         for (size_t i = 0; i < fields_.size(); ++i) {
@@ -103,13 +107,13 @@ public:
                 return false;
 
             std::memcpy(tmpBuf, buf + f.offset, f.length);
-            // Derived::setFieldValue 호출
-            static_cast<Derived*>(this)->setFieldValue(i, tmpBuf);
+            // Derived::__setFieldValue 호출
+            static_cast<Derived*>(this)->__setFieldValue(i, tmpBuf);
         }
         return true;
     }
 
-protected:
+  protected:
     /// @brief 필드 정보 구조체
     struct FieldInfo {
         std::string key; ///< 필드 키 (이름)
@@ -196,7 +200,7 @@ protected:
         layoutDefined_ = true;
     }
 
-private:
+  private:
     std::string formatTemplate_;    ///< 직렬화 기본 템플릿 (미리 계산된 구분자 포함)
     std::vector<FieldInfo> fields_; ///< 필드 정보 목록
     size_t typeOffset_ = 0;         ///< 타입 필드 오프셋

@@ -65,6 +65,14 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
 
     ~UniformFixedRepositoryImpl() = default;
 
+    // 복사 금지
+    UniformFixedRepositoryImpl(const UniformFixedRepositoryImpl&) = delete;
+    UniformFixedRepositoryImpl& operator=(const UniformFixedRepositoryImpl&) = delete;
+
+    // 이동 허용
+    UniformFixedRepositoryImpl(UniformFixedRepositoryImpl&&) = default;
+    UniformFixedRepositoryImpl& operator=(UniformFixedRepositoryImpl&&) = default;
+
     // =========================================================================
     // RecordRepository Interface Implementation
     // =========================================================================
@@ -75,7 +83,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             return false;
         }
 
-        auto idxOpt = findIdxById(record.id(), ec);
+        auto idxOpt = findIdxById(record.getId(), ec);
         if (ec)
             return false;
 
@@ -146,7 +154,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
         for (size_t i = 0; i < cnt; ++i) {
             const char* buf = static_cast<const char*>(mmap_.data()) + i * recordSize_;
             if (temp.deserialize(buf, ec)) {
-                if (temp.id() == id) {
+                if (temp.getId() == id) {
                     return std::make_unique<T>(temp);
                 }
             }
@@ -236,7 +244,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
         for (size_t i = 0; i < cnt; ++i) {
             const char* buf = static_cast<const char*>(mmap_.data()) + i * recordSize_;
             if (temp.deserialize(buf, ec)) {
-                if (temp.id() == id)
+                if (temp.getId() == id)
                     return i;
             }
         }
