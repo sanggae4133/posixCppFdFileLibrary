@@ -159,7 +159,7 @@ if (!f.append(record, true, ec)) {
 
 ```bash
 # Compile
-g++ -std=c++17 -o main main.cpp
+g++ -std=c++17 -o main main.cpp -lstdc++fs
 
 # Run
 ./main
@@ -338,7 +338,7 @@ if (!f.append(record, true, ec)) {
 
 ```bash
 # 컴파일
-g++ -std=c++17 -o main main.cpp
+g++ -std=c++17 -o main main.cpp -lstdc++fs
 
 # 실행
 ./main
