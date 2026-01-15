@@ -445,7 +445,7 @@ TEST_F(VariableExternalModificationTest, DetectsExternalAppend) {
     EXPECT_EQ(repo_->count(ec_), 1);
 
     // 2. Externally append a new record
-    appendLineExternally("{A} {\"name\":\"bob\", \"id\":2}");
+    appendLineExternally("A { \"name\": \"bob\", \"id\": 2 }");
 
     // 3. Force mtime change
     usleep(10000);
@@ -463,7 +463,7 @@ TEST_F(VariableExternalModificationTest, DetectsExternalAppendImmediately) {
     ASSERT_FALSE(ec_);
 
     // 2. Externally append a new record (no sleep)
-    appendLineExternally("{A} {\"name\":\"bob\", \"id\":2}");
+    appendLineExternally("A { \"name\": \"bob\", \"id\": 2 }");
 
     // 3. Verify repo detects the new record (size change should trigger refresh)
     EXPECT_EQ(repo_->count(ec_), 2);
@@ -497,7 +497,7 @@ TEST_F(VariableExternalModificationTest, DetectsExternalModification) {
 
     // 2. Externally overwrite with different content
     std::ofstream ofs(testFile_, std::ios::trunc);
-    ofs << "{A} {\"name\":\"charlie\", \"id\":3}\n";
+    ofs << "A { \"name\": \"charlie\", \"id\": 3 }\n";
     ofs.close();
 
     // 3. Force mtime change
@@ -516,8 +516,8 @@ TEST_F(VariableExternalModificationTest, CacheInvalidationOnSave) {
     ASSERT_FALSE(ec_);
 
     // 2. Externally append
-    appendLineExternally("{A} {\"name\":\"bob\", \"id\":2}");
-    
+    appendLineExternally("A { \"name\": \"bob\", \"id\": 2 }");
+
     usleep(10000);
 
     // 3. Save new record via repo - should see external change
@@ -537,24 +537,25 @@ TEST_F(VariableExternalModificationTest, MultipleExternalAppends) {
     EXPECT_EQ(repo_->count(ec_), 1);
 
     // 2. Externally append multiple records
-    appendLineExternally("{A} {\"name\":\"bob\", \"id\":2}");
-    appendLineExternally("{B} {\"name\":\"charlie\", \"id\":3, \"pw\":\"secret\"}");
+    appendLineExternally("A { \"name\": \"bob\", \"id\": 2 }");
+    appendLineExternally("B { \"name\": \"charlie\", \"id\": 3, \"pw\": \"secret\" }");
 
     usleep(10000);
 
     // 3. Verify all records are visible
     EXPECT_EQ(repo_->count(ec_), 3);
-    
+
     auto all = repo_->findAll(ec_);
     ASSERT_EQ(all.size(), 3);
-    
+
     // Count types
     int countA = 0, countB = 0;
     for (const auto& rec : all) {
-        if (std::string(rec->typeName()) == "A") countA++;
-        if (std::string(rec->typeName()) == "B") countB++;
+        if (std::string(rec->typeName()) == "A")
+            countA++;
+        if (std::string(rec->typeName()) == "B")
+            countB++;
     }
     EXPECT_EQ(countA, 2);
     EXPECT_EQ(countB, 1);
 }
-

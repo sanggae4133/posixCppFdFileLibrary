@@ -1,6 +1,6 @@
 #include "VariableFileRepositoryImpl.hpp"
-#include "../util/textFormatUtil.hpp"
 #include "../util/FileLockGuard.hpp"
+#include "../util/textFormatUtil.hpp"
 
 #include <fcntl.h>
 #include <filesystem>
@@ -259,12 +259,13 @@ bool VariableFileRepositoryImpl::rewriteAll(
 
 bool VariableFileRepositoryImpl::checkAndRefreshCache(std::error_code& ec) {
     struct stat st{};
-    if (::fstat(fd_.get(), &st) < 0) {
+    // path로 stat 호출 - fd로 fstat보다 외부 변경 감지가 더 확실함
+    if (::stat(path_.c_str(), &st) < 0) {
         ec = std::error_code(errno, std::generic_category());
         return false;
     }
 
-    // 외부 수정 감지
+    // 외부 수정 감지 (mtime 또는 size 변경)
     if (st.st_mtime != lastMtime_ || static_cast<size_t>(st.st_size) != lastSize_) {
         invalidateCache();
         lastMtime_ = st.st_mtime;
@@ -282,7 +283,8 @@ bool VariableFileRepositoryImpl::checkAndRefreshCache(std::error_code& ec) {
 
 void VariableFileRepositoryImpl::updateFileStats() {
     struct stat st{};
-    if (::fstat(fd_.get(), &st) == 0) {
+    // path로 stat 호출 - 외부 변경 감지를 위해 일관성 유지
+    if (::stat(path_.c_str(), &st) == 0) {
         lastMtime_ = st.st_mtime;
         lastSize_ = st.st_size;
     }
@@ -290,6 +292,10 @@ void VariableFileRepositoryImpl::updateFileStats() {
 
 bool VariableFileRepositoryImpl::loadAllToCache(std::error_code& ec) {
     cache_.clear();
+
+    // 외부 프로세스가 파일에 추가한 경우, fd의 내부 상태(파일 크기)를 갱신하기 위해
+    // 먼저 SEEK_END로 이동하여 커널이 최신 파일 크기를 인식하게 함
+    (void)::lseek(fd_.get(), 0, SEEK_END);
 
     if (::lseek(fd_.get(), 0, SEEK_SET) < 0) {
         ec = std::error_code(errno, std::generic_category());
