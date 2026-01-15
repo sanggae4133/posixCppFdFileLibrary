@@ -154,6 +154,26 @@ TEST_F(FixedARepositoryTest, EdgeCaseMaxInt64) {
     EXPECT_EQ(found->age, INT64_MAX);
 }
 
+TEST_F(FixedARepositoryTest, EdgeCaseNegativeInt64) {
+    FixedA negative("negative", -12345, "E03");
+
+    ASSERT_TRUE(repo_->save(negative, ec_));
+
+    auto found = repo_->findById("E03", ec_);
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->age, -12345);
+}
+
+TEST_F(FixedARepositoryTest, EdgeCaseMinInt64) {
+    FixedA minAge("min", INT64_MIN, "E04");
+
+    ASSERT_TRUE(repo_->save(minAge, ec_));
+
+    auto found = repo_->findById("E04", ec_);
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->age, INT64_MIN);
+}
+
 // =============================================================================
 // FixedB Repository Tests
 // =============================================================================

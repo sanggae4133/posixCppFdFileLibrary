@@ -11,8 +11,8 @@
 
 namespace FdFile {
 
-/// @brief int64_t의 최대 자리수 (19자리)
-constexpr size_t INT64_FIELD_LEN = 19;
+/// @brief int64_t의 최대 자리수 (부호 포함 20자리: +/- + 19자리)
+constexpr size_t INT64_FIELD_LEN = 20;
 
 // =============================================================================
 // FieldMeta Template
@@ -31,17 +31,37 @@ template <size_t Len, bool IsStr> struct FieldMeta {
             std::memcpy(buf, ptr, Len);
         } else {
             int64_t val = *static_cast<int64_t*>(ptr);
-            std::snprintf(buf, Len + 1, "%0*lld", static_cast<int>(Len),
-                          static_cast<long long>(val));
+            // Format: +0000000000000000025 or -0000000000000000025 (sign + 19 digits = 20 chars)
+            char sign = (val >= 0) ? '+' : '-';
+            // Use unsigned to avoid overflow when val == INT64_MIN (-9223372036854775808)
+            // -INT64_MIN would overflow, but casting to unsigned first avoids this
+            uint64_t absVal =
+                (val >= 0) ? static_cast<uint64_t>(val) : static_cast<uint64_t>(-(val + 1)) + 1;
+            std::snprintf(buf, Len + 1, "%c%019llu", sign, static_cast<unsigned long long>(absVal));
         }
     }
 
+    /// @brief 버퍼에서 값을 읽어 멤버에 설정
+    /// @throws std::runtime_error 유효하지 않은 부호 문자인 경우
     void set(const char* buf) {
         if constexpr (IsStr) {
             std::memset(ptr, 0, Len);
             std::memcpy(ptr, buf, Len);
         } else {
-            *static_cast<int64_t*>(ptr) = std::stoll(buf);
+            // Validate sign character
+            char sign = buf[0];
+            if (sign != '+' && sign != '-') {
+                throw std::runtime_error("Invalid numeric field: sign must be '+' or '-'");
+            }
+            // Parse the numeric part as unsigned (to handle INT64_MIN's absolute value)
+            uint64_t absVal = std::stoull(buf + 1);
+            if (sign == '-') {
+                // Handle INT64_MIN specially: -(uint64_t)9223372036854775808
+                // can't be done directly, so we cast through unsigned
+                *static_cast<int64_t*>(ptr) = -static_cast<int64_t>(absVal);
+            } else {
+                *static_cast<int64_t*>(ptr) = static_cast<int64_t>(absVal);
+            }
         }
     }
 };
@@ -55,7 +75,7 @@ template <size_t Len, size_t N> auto makeField(const char* name, char (&member)[
     return FieldMeta<Len, true>{name, static_cast<void*>(member)};
 }
 
-/// @brief 숫자 필드용 FieldMeta 생성 (고정 19자리)
+/// @brief 숫자 필드용 FieldMeta 생성 (부호 포함 20자리)
 inline auto makeNumField(const char* name, int64_t& member) {
     return FieldMeta<INT64_FIELD_LEN, false>{name, static_cast<void*>(&member)};
 }
@@ -100,7 +120,7 @@ template <typename Tuple> void setFieldByIndex(const Tuple& fields, size_t idx, 
 #define FD_STR(member)                                                                             \
     FdFile::makeField<sizeof(member)>(#member, const_cast<char(&)[sizeof(member)]>(member))
 
-/// @brief 숫자 필드 선언 (길이 = 19, int64_t 고정)
+/// @brief 숫자 필드 선언 (길이 = 20, 부호 포함 int64_t)
 #define FD_NUM(member) FdFile::makeNumField(#member, const_cast<int64_t&>(member))
 
 /// @brief 레코드 공통 메서드 구현 매크로
@@ -120,9 +140,16 @@ template <typename Tuple> void setFieldByIndex(const Tuple& fields, size_t idx, 
     void __setFieldValue(size_t idx, const char* buf) {                                            \
         FdFile::setFieldByIndex(fields(), idx, buf);                                               \
     }                                                                                              \
-    const char* typeName() const { return TypeNameStr; }                                           \
-    std::string getId() const { return id_; }                                                      \
-    void setId(const std::string& id) { id_ = id; }                                                \
+    const char* typeName() const {                                                                 \
+        return TypeNameStr;                                                                        \
+    }                                                                                              \
+    std::string getId() const {                                                                    \
+        return id_;                                                                                \
+    }                                                                                              \
+    void setId(const std::string& id) {                                                            \
+        id_ = id;                                                                                  \
+    }                                                                                              \
+                                                                                                   \
   private:                                                                                         \
     std::string id_;                                                                               \
     void defineLayout() {                                                                          \
