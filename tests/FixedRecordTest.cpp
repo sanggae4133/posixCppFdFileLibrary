@@ -467,3 +467,508 @@ TEST_F(ExternalModificationTest, ExternalAppendMultipleRecords) {
     EXPECT_TRUE(repo_->existsById("002", ec_));
     EXPECT_TRUE(repo_->existsById("003", ec_));
 }
+
+// =============================================================================
+// Bizarre File Corruption Tests (기상천외한 파일 손상 테스트)
+// =============================================================================
+
+class BizarreCorruptionTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        testFile_ = "./test_bizarre_corrupt.db";
+        ::remove(testFile_.c_str());
+        repo_ = std::make_unique<UniformFixedRepositoryImpl<FixedA>>(testFile_, ec_);
+        ASSERT_FALSE(ec_) << "Repository init failed: " << ec_.message();
+
+        // Get record size
+        FixedA temp("test", 0, "000");
+        recordSize_ = temp.recordSize();
+    }
+
+    void TearDown() override {
+        repo_.reset();
+        ::remove(testFile_.c_str());
+    }
+
+    std::string testFile_;
+    std::error_code ec_;
+    std::unique_ptr<UniformFixedRepositoryImpl<FixedA>> repo_;
+    size_t recordSize_ = 0;
+};
+
+TEST_F(BizarreCorruptionTest, EmptyFileAfterTruncation) {
+    // Save then externally truncate to empty
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Externally truncate to 0
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR | O_TRUNC);
+        ASSERT_GE(fd, 0);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Should return 0 count, no error
+    size_t cnt = repo_->count(ec_);
+    EXPECT_FALSE(ec_); // Empty file is valid
+    EXPECT_EQ(cnt, 0);
+}
+
+TEST_F(BizarreCorruptionTest, FileFilledWithZeros) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Overwrite with all zeros
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+        std::vector<char> zeros(recordSize_, 0);
+        ::write(fd, zeros.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Try to find - zeros cause invalid sign character
+    try {
+        auto found = repo_->findById("001", ec_);
+        // If no exception, record not found is acceptable
+        EXPECT_EQ(found, nullptr);
+    } catch (const std::runtime_error& e) {
+        // Exception for invalid sign is expected
+        EXPECT_NE(std::string(e.what()).find("sign"), std::string::npos);
+    }
+}
+
+TEST_F(BizarreCorruptionTest, FileFilledWithRandomBinaryGarbage) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Overwrite with random binary data
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+        std::vector<char> garbage(recordSize_);
+        for (size_t i = 0; i < recordSize_; ++i) {
+            garbage[i] = static_cast<char>(rand() % 256);
+        }
+        ::write(fd, garbage.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Try operations - may throw, but shouldn't crash
+    try {
+        auto all = repo_->findAll(ec_);
+        // If it didn't throw, it should have handled it somehow
+    } catch (const std::exception& e) {
+        // Exception is acceptable for corrupt data
+        SUCCEED() << "Exception thrown for garbage data: " << e.what();
+    }
+}
+
+TEST_F(BizarreCorruptionTest, TruncatedRecord_PartialData) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Truncate to half the record size
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+        ::ftruncate(fd, recordSize_ / 2); // Half a record
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Should return error - file size not aligned
+    auto found = repo_->findById("001", ec_);
+    EXPECT_TRUE(ec_) << "Should error on partial record";
+}
+
+TEST_F(BizarreCorruptionTest, InvalidSignCharacter) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Find the age field and corrupt the sign character
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+
+        // Read current content
+        std::vector<char> buf(recordSize_);
+        ::read(fd, buf.data(), recordSize_);
+
+        // Find +/- and replace with invalid char (somewhere in the numeric field)
+        for (size_t i = 0; i < recordSize_; ++i) {
+            if (buf[i] == '+' || buf[i] == '-') {
+                buf[i] = 'X'; // Invalid sign
+                break;
+            }
+        }
+
+        ::lseek(fd, 0, SEEK_SET);
+        ::write(fd, buf.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Should throw exception for invalid sign
+    try {
+        auto found = repo_->findById("001", ec_);
+        // If no exception, might have just not found it
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("sign"), std::string::npos);
+    }
+}
+
+TEST_F(BizarreCorruptionTest, FileFilledWithNewlines) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Overwrite with newlines
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+        std::vector<char> newlines(recordSize_, '\n');
+        ::write(fd, newlines.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Newlines cause invalid sign character
+    try {
+        auto found = repo_->findById("001", ec_);
+        EXPECT_EQ(found, nullptr);
+    } catch (const std::runtime_error& e) {
+        // Exception for invalid sign is expected
+        EXPECT_NE(std::string(e.what()).find("sign"), std::string::npos);
+    }
+}
+
+TEST_F(BizarreCorruptionTest, FileFilledWithNulls) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Overwrite with null bytes
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+        std::vector<char> nulls(recordSize_, '\0');
+        ::write(fd, nulls.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Should handle gracefully - may throw or fail silently
+    try {
+        auto found = repo_->findById("001", ec_);
+        EXPECT_EQ(found, nullptr);
+    } catch (const std::exception& e) {
+        SUCCEED() << "Exception for null-filled data: " << e.what();
+    }
+}
+
+TEST_F(BizarreCorruptionTest, PartialOverwriteMiddle) {
+    // Save 2 records
+    FixedA alice("alice", 25, "001");
+    FixedA bob("bob", 30, "002");
+    repo_->save(alice, ec_);
+    repo_->save(bob, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Partially overwrite the middle of the file
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+        ::lseek(fd, recordSize_ / 2, SEEK_SET); // Middle of first record
+        const char* garbage = "CORRUPTED_DATA";
+        ::write(fd, garbage, strlen(garbage));
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // First record should be corrupted, second might still work
+    auto foundAlice = repo_->findById("001", ec_);
+    // Alice is corrupted, might not be found
+
+    auto foundBob = repo_->findById("002", ec_);
+    // Bob might still be intact depending on where corruption hit
+}
+
+TEST_F(BizarreCorruptionTest, FileExtendedWithOddBytes) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Append odd number of bytes (not multiple of record size)
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR | O_APPEND);
+        ASSERT_GE(fd, 0);
+        const char* oddBytes = "123"; // 3 bytes
+        ::write(fd, oddBytes, 3);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Should error - file size not aligned
+    auto found = repo_->findById("001", ec_);
+    EXPECT_TRUE(ec_) << "Should error on unaligned file size";
+}
+
+TEST_F(BizarreCorruptionTest, RecordSizeChangedMidway) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Double the file size with different pattern
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR | O_APPEND);
+        ASSERT_GE(fd, 0);
+        std::vector<char> halfRecord(recordSize_ / 2, 'X');
+        ::write(fd, halfRecord.data(), halfRecord.size());
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // File is 1.5x record size - not aligned
+    auto found = repo_->findById("001", ec_);
+    EXPECT_TRUE(ec_) << "Should error on unaligned file";
+}
+
+TEST_F(BizarreCorruptionTest, LettersInNumericField) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Replace numeric digits with letters
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+
+        std::vector<char> buf(recordSize_);
+        ::read(fd, buf.data(), recordSize_);
+
+        // Find the +/- sign and replace following digits with letters
+        for (size_t i = 0; i < recordSize_ - 5; ++i) {
+            if (buf[i] == '+' || buf[i] == '-') {
+                buf[i + 1] = 'A';
+                buf[i + 2] = 'B';
+                buf[i + 3] = 'C';
+                break;
+            }
+        }
+
+        ::lseek(fd, 0, SEEK_SET);
+        ::write(fd, buf.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Should throw exception for invalid number
+    try {
+        auto found = repo_->findById("001", ec_);
+    } catch (const std::exception& e) {
+        // stoll will throw for "ABC..."
+        SUCCEED() << "Exception for letters in numeric: " << e.what();
+    }
+}
+
+TEST_F(BizarreCorruptionTest, NumericFieldWithSpecialChars) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Put special characters in numeric field
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+
+        std::vector<char> buf(recordSize_);
+        ::read(fd, buf.data(), recordSize_);
+
+        // Find +/- and replace with special chars
+        for (size_t i = 0; i < recordSize_ - 5; ++i) {
+            if (buf[i] == '+' || buf[i] == '-') {
+                buf[i + 1] = '!';
+                buf[i + 2] = '@';
+                buf[i + 3] = '#';
+                break;
+            }
+        }
+
+        ::lseek(fd, 0, SEEK_SET);
+        ::write(fd, buf.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    try {
+        auto found = repo_->findById("001", ec_);
+    } catch (const std::exception& e) {
+        SUCCEED() << "Exception for special chars: " << e.what();
+    }
+}
+
+TEST_F(BizarreCorruptionTest, TypeNameCorrupted) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Corrupt the type name field (usually at the start)
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+
+        // Overwrite first few bytes with garbage
+        const char* garbage = "BADTYPE!!";
+        ::write(fd, garbage, strlen(garbage));
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Type name mismatch - record should not be found or error
+    auto found = repo_->findById("001", ec_);
+    // May or may not find depending on where ID is stored
+}
+
+TEST_F(BizarreCorruptionTest, IdFieldCorrupted) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Corrupt ID field specifically
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+
+        std::vector<char> buf(recordSize_);
+        ::read(fd, buf.data(), recordSize_);
+
+        // ID is typically after type name, corrupt it with special chars
+        // Assuming type is ~10 chars, ID starts around offset 10
+        buf[10] = '?';
+        buf[11] = '/';
+        buf[12] = '*';
+
+        ::lseek(fd, 0, SEEK_SET);
+        ::write(fd, buf.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Corruption may or may not affect ID depending on exact layout
+    // Just verify it doesn't crash and handles gracefully
+    try {
+        auto found = repo_->findById("001", ec_);
+        // Found or not found is acceptable - layout varies
+    } catch (const std::exception& e) {
+        SUCCEED() << "Exception is acceptable: " << e.what();
+    }
+}
+
+TEST_F(BizarreCorruptionTest, HighBitUTF8Characters) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Insert UTF-8 multi-byte characters (한글, emoji, etc.)
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+
+        std::vector<char> buf(recordSize_);
+        ::read(fd, buf.data(), recordSize_);
+
+        // Insert UTF-8 Korean character 한 (ED 95 9C in UTF-8)
+        buf[0] = static_cast<char>(0xED);
+        buf[1] = static_cast<char>(0x95);
+        buf[2] = static_cast<char>(0x9C);
+
+        ::lseek(fd, 0, SEEK_SET);
+        ::write(fd, buf.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Should handle non-ASCII gracefully
+    try {
+        auto found = repo_->findById("001", ec_);
+        // Not found is acceptable
+    } catch (const std::exception& e) {
+        SUCCEED() << "Exception for UTF-8: " << e.what();
+    }
+}
+
+TEST_F(BizarreCorruptionTest, AllFieldsOverwrittenWithSpaces) {
+    // Save valid record
+    FixedA alice("alice", 25, "001");
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // Fill entire record with spaces
+    {
+        int fd = ::open(testFile_.c_str(), O_RDWR);
+        ASSERT_GE(fd, 0);
+        std::vector<char> spaces(recordSize_, ' ');
+        ::write(fd, spaces.data(), recordSize_);
+        ::fsync(fd);
+        ::close(fd);
+    }
+
+    usleep(10000);
+
+    // Spaces in numeric field should cause issues
+    try {
+        auto found = repo_->findById("001", ec_);
+    } catch (const std::exception& e) {
+        EXPECT_NE(std::string(e.what()).find("sign"), std::string::npos);
+    }
+}

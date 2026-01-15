@@ -2,11 +2,35 @@
 # FdFileLib Unit Tests
 # =============================================================================
 
-# Test executable
-add_executable(fdfile_tests
+# ==== Unit Tests ====
+set(UNIT_TEST_SOURCES
+    unit/UtilTest.cpp
+    unit/UniqueFdTest.cpp
+    unit/MmapGuardTest.cpp
+    unit/FileLockGuardTest.cpp
+    unit/FieldMetaTest.cpp
+)
+
+# ==== Scenario Tests ====
+set(SCENARIO_TEST_SOURCES
+    scenario/FixedRecordScenarioTest.cpp
+    scenario/VariableRecordScenarioTest.cpp
+)
+
+# ==== Integration Tests ====
+set(INTEGRATION_TEST_SOURCES
+    integration/ConcurrencyTest.cpp
+    integration/FilePermissionTest.cpp
+    # Keep existing tests that have corruption scenarios
     FixedRecordTest.cpp
     VariableRecordTest.cpp
-    UtilTest.cpp
+)
+
+# Test executable (all tests)
+add_executable(fdfile_tests
+    ${UNIT_TEST_SOURCES}
+    ${SCENARIO_TEST_SOURCES}
+    ${INTEGRATION_TEST_SOURCES}
 )
 
 # Include paths
