@@ -3,6 +3,8 @@
 /// @brief 가변 길이 레코드 베이스 (구 TextRecordBase)
 
 #include "RecordBase.hpp"
+
+#include <memory>
 #include <string>
 #include <system_error>
 #include <unordered_map>
