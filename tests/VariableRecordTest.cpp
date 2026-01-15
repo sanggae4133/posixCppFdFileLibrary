@@ -402,3 +402,159 @@ TEST_F(VariableFormatCorruptionTest, NumberAsString) {
     auto all = repo_->findAll(ec_);
     // May or may not convert
 }
+
+// =============================================================================
+// External Modification Detection Tests (외부 수정 감지 테스트)
+// =============================================================================
+
+class VariableExternalModificationTest : public ::testing::Test {
+  protected:
+    void SetUp() override {
+        testFile_ = "./test_variable_external.db";
+        ::remove(testFile_.c_str());
+
+        std::vector<std::unique_ptr<VariableRecordBase>> protos;
+        protos.push_back(std::make_unique<A>());
+        protos.push_back(std::make_unique<B>());
+
+        repo_ = std::make_unique<VariableFileRepositoryImpl>(testFile_, std::move(protos), ec_);
+        ASSERT_FALSE(ec_) << "Repository init failed: " << ec_.message();
+    }
+
+    void TearDown() override {
+        repo_.reset();
+        ::remove(testFile_.c_str());
+    }
+
+    void appendLineExternally(const std::string& line) {
+        std::ofstream ofs(testFile_, std::ios::app);
+        ofs << line << "\n";
+        ofs.close();
+    }
+
+    std::string testFile_;
+    std::error_code ec_;
+    std::unique_ptr<VariableFileRepositoryImpl> repo_;
+};
+
+TEST_F(VariableExternalModificationTest, DetectsExternalAppend) {
+    // 1. Save via repo
+    A alice("alice", 1);
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+    EXPECT_EQ(repo_->count(ec_), 1);
+
+    // 2. Externally append a new record
+    appendLineExternally("{A} {\"name\":\"bob\", \"id\":2}");
+
+    // 3. Force mtime change
+    usleep(10000);
+
+    // 4. Verify repo detects the new record
+    EXPECT_EQ(repo_->count(ec_), 2);
+    EXPECT_TRUE(repo_->existsById("1", ec_));
+    EXPECT_TRUE(repo_->existsById("2", ec_));
+}
+
+TEST_F(VariableExternalModificationTest, DetectsExternalAppendImmediately) {
+    // 1. Save via repo
+    A alice("alice", 1);
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // 2. Externally append a new record (no sleep)
+    appendLineExternally("{A} {\"name\":\"bob\", \"id\":2}");
+
+    // 3. Verify repo detects the new record (size change should trigger refresh)
+    EXPECT_EQ(repo_->count(ec_), 2);
+}
+
+TEST_F(VariableExternalModificationTest, DetectsExternalDeleteAll) {
+    // 1. Save records via repo
+    A alice("alice", 1);
+    A bob("bob", 2);
+    repo_->save(alice, ec_);
+    repo_->save(bob, ec_);
+    ASSERT_FALSE(ec_);
+    EXPECT_EQ(repo_->count(ec_), 2);
+
+    // 2. Externally truncate file
+    std::ofstream ofs(testFile_, std::ios::trunc);
+    ofs.close();
+
+    // 3. Force mtime change
+    usleep(10000);
+
+    // 4. Verify repo detects empty file
+    EXPECT_EQ(repo_->count(ec_), 0);
+}
+
+TEST_F(VariableExternalModificationTest, DetectsExternalModification) {
+    // 1. Save via repo
+    A alice("alice", 1);
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // 2. Externally overwrite with different content
+    std::ofstream ofs(testFile_, std::ios::trunc);
+    ofs << "{A} {\"name\":\"charlie\", \"id\":3}\n";
+    ofs.close();
+
+    // 3. Force mtime change
+    usleep(10000);
+
+    // 4. Verify repo detects the change
+    auto found = repo_->findById("3", ec_);
+    ASSERT_NE(found, nullptr);
+    EXPECT_FALSE(repo_->existsById("1", ec_));
+}
+
+TEST_F(VariableExternalModificationTest, CacheInvalidationOnSave) {
+    // 1. Save initial record
+    A alice("alice", 1);
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+
+    // 2. Externally append
+    appendLineExternally("{A} {\"name\":\"bob\", \"id\":2}");
+    
+    usleep(10000);
+
+    // 3. Save new record via repo - should see external change
+    A charlie("charlie", 3);
+    repo_->save(charlie, ec_);
+    ASSERT_FALSE(ec_);
+
+    // 4. All 3 records should exist
+    EXPECT_EQ(repo_->count(ec_), 3);
+}
+
+TEST_F(VariableExternalModificationTest, MultipleExternalAppends) {
+    // 1. Save initial record
+    A alice("alice", 1);
+    repo_->save(alice, ec_);
+    ASSERT_FALSE(ec_);
+    EXPECT_EQ(repo_->count(ec_), 1);
+
+    // 2. Externally append multiple records
+    appendLineExternally("{A} {\"name\":\"bob\", \"id\":2}");
+    appendLineExternally("{B} {\"name\":\"charlie\", \"id\":3, \"pw\":\"secret\"}");
+
+    usleep(10000);
+
+    // 3. Verify all records are visible
+    EXPECT_EQ(repo_->count(ec_), 3);
+    
+    auto all = repo_->findAll(ec_);
+    ASSERT_EQ(all.size(), 3);
+    
+    // Count types
+    int countA = 0, countB = 0;
+    for (const auto& rec : all) {
+        if (std::string(rec->typeName()) == "A") countA++;
+        if (std::string(rec->typeName()) == "B") countB++;
+    }
+    EXPECT_EQ(countA, 2);
+    EXPECT_EQ(countB, 1);
+}
+

@@ -48,10 +48,18 @@ VariableFileRepositoryImpl::VariableFileRepositoryImpl(
     fd_.reset(::open(path_.c_str(), flags, 0644));
     if (!fd_) {
         ec = std::error_code(errno, std::generic_category());
+        return;
     }
+
+    // 초기 파일 stat 저장 (외부 수정 감지용)
+    updateFileStats();
 }
 
 bool VariableFileRepositoryImpl::save(const VariableRecordBase& record, std::error_code& ec) {
+    // 캐시 갱신 확인
+    if (!checkAndRefreshCache(ec))
+        return false;
+
     if (existsById(record.id(), ec)) {
         // Update
         auto all = findAll(ec);
@@ -62,27 +70,23 @@ bool VariableFileRepositoryImpl::save(const VariableRecordBase& record, std::err
         bool replaced = false;
         for (auto& r : all) {
             if (r->id() == record.id()) {
-                // Clone from input record to unique_ptr
-                if (auto* derived = dynamic_cast<const VariableRecordBase*>(&record)) {
-                    // Clone trick: record.clone() returns RecordBase, we need VariableRecordBase
-                    // But our prototypes are VariableRecordBase, so clone() should work
-                    // if we cast it. But wait, we need to deep copy the *input* record.
-                    // The input record SHOULD implement clone().
-                    auto cloned = record.clone();
-                    if (auto* v = dynamic_cast<VariableRecordBase*>(cloned.get())) {
-                        (void)cloned.release();
-                        r.reset(v);
-                        replaced = true;
-                    }
+                auto cloned = record.clone();
+                if (auto* v = dynamic_cast<VariableRecordBase*>(cloned.get())) {
+                    (void)cloned.release();
+                    r.reset(v);
+                    replaced = true;
                 }
                 break;
             }
         }
-        if (replaced)
+        if (replaced) {
+            invalidateCache();
             return rewriteAll(all, ec);
+        }
         return false;
     } else {
         // Insert
+        invalidateCache();
         return appendRecord(record, ec);
     }
 }
@@ -110,47 +114,16 @@ VariableFileRepositoryImpl::findAll(std::error_code& ec) {
     if (ec)
         return result;
 
-    if (::lseek(fd_.get(), 0, SEEK_SET) < 0) {
-        ec = std::error_code(errno, std::generic_category());
+    // 캐시 갱신 확인
+    if (!checkAndRefreshCache(ec))
         return result;
-    }
 
-    char buf[4096];
-    std::string leftover;
-    ssize_t n;
-
-    while ((n = ::read(fd_.get(), buf, sizeof(buf))) > 0) {
-        std::string chunk = leftover + std::string(buf, n);
-        std::istringstream iss(chunk);
-        std::string line;
-
-        while (std::getline(iss, line)) {
-            if (line.empty())
-                continue;
-            // 마지막 줄이 완전하지 않으면 leftover로
-            if (iss.eof() && chunk.back() != '\n') {
-                leftover = line;
-                break;
-            } else {
-                // Parse line
-                std::string type;
-                std::unordered_map<std::string, std::pair<bool, std::string>> kv;
-                if (util::parseLine(line, type, kv, ec)) {
-                    auto it = prototypes_.find(type);
-                    if (it != prototypes_.end()) {
-                        auto clo = it->second->clone();
-                        if (auto* v = dynamic_cast<VariableRecordBase*>(clo.get())) {
-                            (void)clo.release();
-                            if (v->fromKv(kv, ec)) {
-                                result.push_back(std::unique_ptr<VariableRecordBase>(v));
-                            } else {
-                                delete v;
-                            }
-                        }
-                    }
-                }
-                leftover.clear();
-            }
+    // 캐시에서 복사본 반환
+    for (const auto& r : cache_) {
+        auto cloned = r->clone();
+        if (auto* v = dynamic_cast<VariableRecordBase*>(cloned.get())) {
+            (void)cloned.release();
+            result.push_back(std::unique_ptr<VariableRecordBase>(v));
         }
     }
     return result;
@@ -158,17 +131,31 @@ VariableFileRepositoryImpl::findAll(std::error_code& ec) {
 
 std::unique_ptr<VariableRecordBase> VariableFileRepositoryImpl::findById(const std::string& id,
                                                                          std::error_code& ec) {
-    auto all = findAll(ec);
+    detail::FileLockGuard lock(fd_.get(), detail::FileLockGuard::Mode::Shared, ec);
     if (ec)
         return nullptr;
-    for (auto& r : all) {
-        if (r->id() == id)
-            return std::move(r);
+
+    // 캐시 갱신 확인
+    if (!checkAndRefreshCache(ec))
+        return nullptr;
+
+    for (const auto& r : cache_) {
+        if (r->id() == id) {
+            auto cloned = r->clone();
+            if (auto* v = dynamic_cast<VariableRecordBase*>(cloned.get())) {
+                (void)cloned.release();
+                return std::unique_ptr<VariableRecordBase>(v);
+            }
+        }
     }
     return nullptr;
 }
 
 bool VariableFileRepositoryImpl::deleteById(const std::string& id, std::error_code& ec) {
+    // 캐시 갱신 확인
+    if (!checkAndRefreshCache(ec))
+        return false;
+
     auto all = findAll(ec);
     if (ec)
         return false;
@@ -183,8 +170,10 @@ bool VariableFileRepositoryImpl::deleteById(const std::string& id, std::error_co
         kept.push_back(std::move(r));
     }
 
-    if (found)
+    if (found) {
+        invalidateCache();
         return rewriteAll(kept, ec);
+    }
     return true; // Not found acts as success
 }
 
@@ -196,18 +185,27 @@ bool VariableFileRepositoryImpl::deleteAll(std::error_code& ec) {
         ec = std::error_code(errno, std::generic_category());
         return false;
     }
+    invalidateCache();
     return sync(ec);
 }
 
 size_t VariableFileRepositoryImpl::count(std::error_code& ec) {
-    auto all = findAll(ec);
-    return all.size();
+    // 캐시 갱신 확인
+    if (!checkAndRefreshCache(ec))
+        return 0;
+    return cache_.size();
 }
 
 bool VariableFileRepositoryImpl::existsById(const std::string& id, std::error_code& ec) {
-    // Optimized scan possible, but reusing findAll for simplicity
-    auto p = findById(id, ec);
-    return p != nullptr;
+    // 캐시 갱신 확인
+    if (!checkAndRefreshCache(ec))
+        return false;
+
+    for (const auto& r : cache_) {
+        if (r->id() == id)
+            return true;
+    }
+    return false;
 }
 
 bool VariableFileRepositoryImpl::appendRecord(const VariableRecordBase& record,
@@ -259,11 +257,100 @@ bool VariableFileRepositoryImpl::rewriteAll(
     return sync(ec);
 }
 
+bool VariableFileRepositoryImpl::checkAndRefreshCache(std::error_code& ec) {
+    struct stat st{};
+    if (::fstat(fd_.get(), &st) < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+
+    // 외부 수정 감지
+    if (st.st_mtime != lastMtime_ || static_cast<size_t>(st.st_size) != lastSize_) {
+        invalidateCache();
+        lastMtime_ = st.st_mtime;
+        lastSize_ = st.st_size;
+    }
+
+    // 캐시가 유효하지 않으면 로드
+    if (!cacheValid_) {
+        if (!loadAllToCache(ec)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void VariableFileRepositoryImpl::updateFileStats() {
+    struct stat st{};
+    if (::fstat(fd_.get(), &st) == 0) {
+        lastMtime_ = st.st_mtime;
+        lastSize_ = st.st_size;
+    }
+}
+
+bool VariableFileRepositoryImpl::loadAllToCache(std::error_code& ec) {
+    cache_.clear();
+
+    if (::lseek(fd_.get(), 0, SEEK_SET) < 0) {
+        ec = std::error_code(errno, std::generic_category());
+        return false;
+    }
+
+    char buf[4096];
+    std::string leftover;
+    ssize_t n;
+
+    while ((n = ::read(fd_.get(), buf, sizeof(buf))) > 0) {
+        std::string chunk = leftover + std::string(buf, n);
+        std::istringstream iss(chunk);
+        std::string line;
+
+        while (std::getline(iss, line)) {
+            if (line.empty())
+                continue;
+            // 마지막 줄이 완전하지 않으면 leftover로
+            if (iss.eof() && chunk.back() != '\n') {
+                leftover = line;
+                break;
+            } else {
+                // Parse line
+                std::string type;
+                std::unordered_map<std::string, std::pair<bool, std::string>> kv;
+                if (util::parseLine(line, type, kv, ec)) {
+                    auto it = prototypes_.find(type);
+                    if (it != prototypes_.end()) {
+                        auto clo = it->second->clone();
+                        if (auto* v = dynamic_cast<VariableRecordBase*>(clo.get())) {
+                            (void)clo.release();
+                            if (v->fromKv(kv, ec)) {
+                                cache_.push_back(std::unique_ptr<VariableRecordBase>(v));
+                            } else {
+                                delete v;
+                            }
+                        }
+                    }
+                }
+                leftover.clear();
+            }
+        }
+    }
+
+    cacheValid_ = true;
+    return true;
+}
+
+void VariableFileRepositoryImpl::invalidateCache() {
+    cache_.clear();
+    cacheValid_ = false;
+}
+
 bool VariableFileRepositoryImpl::sync(std::error_code& ec) {
     if (::fsync(fd_.get()) < 0) {
         ec = std::error_code(errno, std::generic_category());
         return false;
     }
+    // sync 후 파일 stat 업데이트
+    updateFileStats();
     return true;
 }
 

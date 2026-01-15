@@ -34,9 +34,24 @@ class VariableFileRepositoryImpl : public RecordRepository<VariableRecordBase> {
                     std::error_code& ec);
     bool sync(std::error_code& ec);
 
+    /// @brief 파일 mtime/size 변경 감지 및 캐시 갱신
+    bool checkAndRefreshCache(std::error_code& ec);
+    /// @brief 파일 stat 정보 업데이트
+    void updateFileStats();
+    /// @brief 캐시에서 전체 레코드 로드
+    bool loadAllToCache(std::error_code& ec);
+    /// @brief 캐시 무효화
+    void invalidateCache();
+
     std::string path_;
     detail::UniqueFd fd_;
     std::unordered_map<std::string, std::unique_ptr<VariableRecordBase>> prototypes_;
+
+    // 캐시 관련 멤버
+    std::vector<std::unique_ptr<VariableRecordBase>> cache_;
+    bool cacheValid_ = false;
+    time_t lastMtime_ = 0;
+    size_t lastSize_ = 0;
 };
 
 } // namespace FdFile

@@ -71,12 +71,18 @@ template <size_t Len, bool IsStr> struct FieldMeta {
 // =============================================================================
 
 /// @brief 문자 배열 필드용 FieldMeta 생성
+/// @note static_assert: 템플릿 길이(Len)와 배열 크기(N)가 일치해야 함
 template <size_t Len, size_t N> auto makeField(const char* name, char (&member)[N]) {
+    static_assert(Len == N, "FD_STR: Template length must match array size");
     return FieldMeta<Len, true>{name, static_cast<void*>(member)};
 }
 
 /// @brief 숫자 필드용 FieldMeta 생성 (부호 포함 20자리)
-inline auto makeNumField(const char* name, int64_t& member) {
+/// @note static_assert: 멤버 타입이 int64_t여야 함
+template <typename T>
+auto makeNumField(const char* name, T& member) {
+    static_assert(std::is_same_v<std::remove_cv_t<T>, int64_t>,
+                  "FD_NUM: member must be int64_t");
     return FieldMeta<INT64_FIELD_LEN, false>{name, static_cast<void*>(&member)};
 }
 

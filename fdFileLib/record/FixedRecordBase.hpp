@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 #include <system_error>
+#include <type_traits>
 #include <vector>
 
 namespace FdFile {
@@ -29,10 +30,18 @@ template <typename Derived> class FixedRecordBase {
     ///          메모리 누수를 방지하기 위해 default 소멸자를 명시합니다.
     ~FixedRecordBase() = default;
 
+  protected:
+    /// @brief 기본 생성자 (CRTP 타입 검증 포함)
+    /// @note static_assert: Derived가 FixedRecordBase<Derived>를 상속해야 함
+    FixedRecordBase() {
+        static_assert(std::is_base_of_v<FixedRecordBase<Derived>, Derived>,
+                      "CRTP: Derived must inherit from FixedRecordBase<Derived>");
+    }
+
     // =========================================================================
     // Public Interface (No Virtual)
     // =========================================================================
-
+  public:
     /// @brief 전체 레코드 크기 반환
     /// @return 레코드의 총 바이트 수 (타입, ID, 필드 데이터 포함)
     size_t recordSize() const { return totalSize_; }
