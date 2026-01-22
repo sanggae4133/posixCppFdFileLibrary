@@ -2,8 +2,8 @@
 /// @file FixedA.hpp
 /// @brief 고정 길이 레코드 예제 A (간소화된 매크로 사용)
 
-#include "record/FieldMeta.hpp"
-#include "record/FixedRecordBase.hpp"
+#include <fdfile/record/FieldMeta.hpp>
+#include <fdfile/record/FixedRecordBase.hpp>
 
 #include <cstring>
 

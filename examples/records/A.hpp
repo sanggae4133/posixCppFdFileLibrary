@@ -2,8 +2,8 @@
 /// @file A.hpp
 /// @brief Variable Length Record A
 
-#include "record/VariableRecordBase.hpp"
-#include "util/textFormatUtil.hpp"
+#include <fdfile/record/VariableRecordBase.hpp>
+#include <fdfile/util/textFormatUtil.hpp>
 
 class A : public FdFile::VariableRecordBase {
   public:

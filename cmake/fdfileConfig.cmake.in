@@ -1,0 +1,31 @@
+@PACKAGE_INIT@
+
+# =============================================================================
+# FdFileLib CMake Package Configuration
+# =============================================================================
+#
+# This file is used by find_package(fdfile) to locate and configure the library.
+#
+# Usage:
+#   find_package(fdfile REQUIRED)
+#   target_link_libraries(your_target PRIVATE fdfile::fdfile)
+#
+# This will define:
+#   fdfile_FOUND        - True if library was found
+#   fdfile_VERSION      - Version of the library
+#   fdfile::fdfile      - Imported target to link against
+#
+# =============================================================================
+
+include(CMakeFindDependencyMacro)
+
+# Include exported targets
+include("${CMAKE_CURRENT_LIST_DIR}/fdfileTargets.cmake")
+
+# Verify all required components are present
+check_required_components(fdfile)
+
+# Provide helpful message
+if(NOT fdfile_FIND_QUIETLY)
+    message(STATUS "Found fdfile: ${CMAKE_CURRENT_LIST_DIR} (version ${fdfile_VERSION})")
+endif()

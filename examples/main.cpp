@@ -3,15 +3,14 @@
 #include <string>
 #include <vector>
 
-// Records
+// Main library header
+#include <fdfile/fdfile.hpp>
+
+// Example records
 #include "records/A.hpp"      // Variable Record
 #include "records/B.hpp"      // Variable Record
 #include "records/FixedA.hpp" // Fixed Record
 #include "records/FixedB.hpp" // Fixed Record
-
-// Repositories
-#include "repository/UniformFixedRepositoryImpl.hpp"
-#include "repository/VariableFileRepositoryImpl.hpp"
 
 using namespace FdFile;
 
