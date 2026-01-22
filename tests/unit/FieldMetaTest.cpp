@@ -6,7 +6,7 @@
 #include <cstring>
 #include <gtest/gtest.h>
 
-#include "record/FieldMeta.hpp"
+#include <fdfile/record/FieldMeta.hpp>
 
 using namespace FdFile;
 

@@ -37,8 +37,6 @@ add_executable(fdfile_tests
 target_include_directories(fdfile_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/examples
-    # Legacy path for tests that still use old includes
-    ${CMAKE_SOURCE_DIR}/fdFileLib
 )
 
 # Link libraries

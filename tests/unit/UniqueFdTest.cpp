@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
-#include "util/UniqueFd.hpp"
+#include <fdfile/util/UniqueFd.hpp>
 
 using namespace FdFile::detail;
 

@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
-#include "util/FileLockGuard.hpp"
+#include <fdfile/util/FileLockGuard.hpp>
 
 using namespace FdFile::detail;
 
