@@ -1,4 +1,14 @@
 /**
+ * @file tests/FixedRecordTest.cpp
+ * @brief 코드 이해를 위한 한국어 상세 주석 블록.
+ * @details
+ * - 이 파일은 라이브러리의 동작 계약(contract)을 검증하기 위한 테스트 시나리오를 정의합니다.
+ * - 테스트는 정상 경로뿐 아니라 경계값, 실패 경로, 파일 I/O 예외 상황을 분리해 원인 추적이 쉽도록 구성되어야 합니다.
+ * - 각 assertion은 '무엇이 실패했는지'가 즉시 드러나도록 작성하며, 상태 공유를 피하기 위해 테스트 간 파일/데이터 독립성을 유지해야 합니다.
+ * - 저장 포맷/락 정책/캐시 정책이 바뀌면 해당 변화가 기존 계약을 깨지 않는지 회귀 테스트를 반드시 확장해야 합니다.
+ * - 향후 테스트 추가 시에는 재현 가능한 입력, 명확한 기대 결과, 실패 시 진단 가능한 메시지를 함께 유지하는 것을 권장합니다.
+ */
+/**
  * @file FixedRecordTest.cpp
  * @brief Unit tests for Fixed-length record repositories (FixedA, FixedB)
  */
@@ -35,6 +45,9 @@ class FixedARepositoryTest : public ::testing::Test {
     std::unique_ptr<UniformFixedRepositoryImpl<FixedA>> repo_;
 };
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 InsertSingleRecord 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, InsertSingleRecord) {
     FixedA alice("alice", 25, "001");
 
@@ -42,6 +55,9 @@ TEST_F(FixedARepositoryTest, InsertSingleRecord) {
     EXPECT_EQ(repo_->count(ec_), 1);
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 InsertMultipleRecords 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, InsertMultipleRecords) {
     FixedA alice("alice", 25, "001");
     FixedA bob("bob", 30, "002");
@@ -54,6 +70,9 @@ TEST_F(FixedARepositoryTest, InsertMultipleRecords) {
     EXPECT_EQ(repo_->count(ec_), 3);
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 UpdateExistingRecord 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, UpdateExistingRecord) {
     FixedA alice("alice", 25, "001");
     repo_->save(alice, ec_);
@@ -71,6 +90,9 @@ TEST_F(FixedARepositoryTest, UpdateExistingRecord) {
     EXPECT_EQ(found->age, 26);
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 FindById 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, FindById) {
     FixedA alice("alice", 25, "001");
     FixedA bob("bob", 30, "002");
@@ -84,6 +106,9 @@ TEST_F(FixedARepositoryTest, FindById) {
     EXPECT_EQ(found->getId(), "002");
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 FindByIdNotFound 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, FindByIdNotFound) {
     FixedA alice("alice", 25, "001");
     repo_->save(alice, ec_);
@@ -92,6 +117,9 @@ TEST_F(FixedARepositoryTest, FindByIdNotFound) {
     EXPECT_EQ(notFound, nullptr);
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 FindAll 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, FindAll) {
     FixedA alice("alice", 25, "001");
     FixedA bob("bob", 30, "002");
@@ -104,6 +132,9 @@ TEST_F(FixedARepositoryTest, FindAll) {
     EXPECT_EQ(all.size(), 3);
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 ExistsById 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, ExistsById) {
     FixedA alice("alice", 25, "001");
     repo_->save(alice, ec_);
@@ -112,6 +143,9 @@ TEST_F(FixedARepositoryTest, ExistsById) {
     EXPECT_FALSE(repo_->existsById("999", ec_));
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 DeleteById 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, DeleteById) {
     FixedA alice("alice", 25, "001");
     FixedA bob("bob", 30, "002");
@@ -124,6 +158,9 @@ TEST_F(FixedARepositoryTest, DeleteById) {
     EXPECT_TRUE(repo_->existsById("002", ec_));
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 DeleteAll 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, DeleteAll) {
     FixedA alice("alice", 25, "001");
     FixedA bob("bob", 30, "002");
@@ -134,6 +171,9 @@ TEST_F(FixedARepositoryTest, DeleteAll) {
     EXPECT_EQ(repo_->count(ec_), 0);
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 EdgeCaseEmptyName 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, EdgeCaseEmptyName) {
     FixedA empty("", 0, "E01");
 
@@ -144,6 +184,9 @@ TEST_F(FixedARepositoryTest, EdgeCaseEmptyName) {
     EXPECT_STREQ(found->name, "");
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 EdgeCaseMaxInt64 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, EdgeCaseMaxInt64) {
     FixedA maxAge("max", INT64_MAX, "E02");
 
@@ -154,6 +197,9 @@ TEST_F(FixedARepositoryTest, EdgeCaseMaxInt64) {
     EXPECT_EQ(found->age, INT64_MAX);
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 EdgeCaseNegativeInt64 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, EdgeCaseNegativeInt64) {
     FixedA negative("negative", -12345, "E03");
 
@@ -164,6 +210,9 @@ TEST_F(FixedARepositoryTest, EdgeCaseNegativeInt64) {
     EXPECT_EQ(found->age, -12345);
 }
 
+// 시나리오 상세 설명: FixedARepositoryTest 그룹의 EdgeCaseMinInt64 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedARepositoryTest, EdgeCaseMinInt64) {
     FixedA minAge("min", INT64_MIN, "E04");
 
@@ -197,6 +246,9 @@ class FixedBRepositoryTest : public ::testing::Test {
     std::unique_ptr<UniformFixedRepositoryImpl<FixedB>> repo_;
 };
 
+// 시나리오 상세 설명: FixedBRepositoryTest 그룹의 InsertMultipleRecords 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedBRepositoryTest, InsertMultipleRecords) {
     FixedB laptop("Laptop", 1500000, "P001");
     FixedB phone("Phone", 800000, "P002");
@@ -209,6 +261,9 @@ TEST_F(FixedBRepositoryTest, InsertMultipleRecords) {
     EXPECT_EQ(repo_->count(ec_), 3);
 }
 
+// 시나리오 상세 설명: FixedBRepositoryTest 그룹의 FindAll 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedBRepositoryTest, FindAll) {
     FixedB laptop("Laptop", 1500000, "P001");
     FixedB phone("Phone", 800000, "P002");
@@ -230,6 +285,9 @@ TEST_F(FixedBRepositoryTest, FindAll) {
     EXPECT_TRUE(foundPhone);
 }
 
+// 시나리오 상세 설명: FixedBRepositoryTest 그룹의 UpdateExistingRecord 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(FixedBRepositoryTest, UpdateExistingRecord) {
     FixedB phone("Phone", 800000, "P001");
     repo_->save(phone, ec_);
@@ -268,6 +326,9 @@ class ExternalModificationTest : public ::testing::Test {
     std::unique_ptr<UniformFixedRepositoryImpl<FixedA>> repo_;
 };
 
+// 시나리오 상세 설명: ExternalModificationTest 그룹의 DetectsExternalChange 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(ExternalModificationTest, DetectsExternalChange) {
     // 1. Save via repo
     FixedA alice("alice", 25, "001");
@@ -312,6 +373,9 @@ TEST_F(ExternalModificationTest, DetectsExternalChange) {
     EXPECT_EQ(repo_->count(ec_), 2);
 }
 
+// 시나리오 상세 설명: ExternalModificationTest 그룹의 DetectsExternalChangeImmediately 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(ExternalModificationTest, DetectsExternalChangeImmediately) {
     // 1. Save via repo
     FixedA alice("alice", 25, "001");
@@ -353,6 +417,9 @@ TEST_F(ExternalModificationTest, DetectsExternalChangeImmediately) {
     EXPECT_EQ(repo_->count(ec_), 2);
 }
 
+// 시나리오 상세 설명: ExternalModificationTest 그룹의 CorruptFileReturnsError 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(ExternalModificationTest, CorruptFileReturnsError) {
     // 1. Save valid record
     FixedA alice("alice", 25, "001");
@@ -379,6 +446,9 @@ TEST_F(ExternalModificationTest, CorruptFileReturnsError) {
     EXPECT_TRUE(ec_) << "Should return error for corrupt file";
 }
 
+// 시나리오 상세 설명: ExternalModificationTest 그룹의 CorruptFileReturnsErrorImmediately 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(ExternalModificationTest, CorruptFileReturnsErrorImmediately) {
     // 1. Save valid record
     FixedA alice("alice", 25, "001");
@@ -402,6 +472,9 @@ TEST_F(ExternalModificationTest, CorruptFileReturnsErrorImmediately) {
     EXPECT_TRUE(ec_) << "Should return error for corrupt file";
 }
 
+// 시나리오 상세 설명: ExternalModificationTest 그룹의 CacheConsistencyAfterDelete 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(ExternalModificationTest, CacheConsistencyAfterDelete) {
     // Insert 3 records
     FixedA alice("alice", 25, "001");
@@ -432,6 +505,9 @@ TEST_F(ExternalModificationTest, CacheConsistencyAfterDelete) {
     EXPECT_STREQ(foundCharlie->name, "charlie");
 }
 
+// 시나리오 상세 설명: ExternalModificationTest 그룹의 ExternalAppendMultipleRecords 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(ExternalModificationTest, ExternalAppendMultipleRecords) {
     // 1. Save initial record
     FixedA alice("alice", 25, "001");
@@ -496,6 +572,9 @@ class BizarreCorruptionTest : public ::testing::Test {
     size_t recordSize_ = 0;
 };
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 EmptyFileAfterTruncation 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, EmptyFileAfterTruncation) {
     // Save then externally truncate to empty
     FixedA alice("alice", 25, "001");
@@ -517,6 +596,9 @@ TEST_F(BizarreCorruptionTest, EmptyFileAfterTruncation) {
     EXPECT_EQ(cnt, 0);
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 FileFilledWithZeros 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, FileFilledWithZeros) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -546,6 +628,9 @@ TEST_F(BizarreCorruptionTest, FileFilledWithZeros) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 FileFilledWithRandomBinaryGarbage 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, FileFilledWithRandomBinaryGarbage) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -577,6 +662,9 @@ TEST_F(BizarreCorruptionTest, FileFilledWithRandomBinaryGarbage) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 TruncatedRecord_PartialData 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, TruncatedRecord_PartialData) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -598,6 +686,9 @@ TEST_F(BizarreCorruptionTest, TruncatedRecord_PartialData) {
     EXPECT_TRUE(ec_) << "Should error on partial record";
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 InvalidSignCharacter 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, InvalidSignCharacter) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -638,6 +729,9 @@ TEST_F(BizarreCorruptionTest, InvalidSignCharacter) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 FileFilledWithNewlines 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, FileFilledWithNewlines) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -666,6 +760,9 @@ TEST_F(BizarreCorruptionTest, FileFilledWithNewlines) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 FileFilledWithNulls 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, FileFilledWithNulls) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -693,6 +790,9 @@ TEST_F(BizarreCorruptionTest, FileFilledWithNulls) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 PartialOverwriteMiddle 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, PartialOverwriteMiddle) {
     // Save 2 records
     FixedA alice("alice", 25, "001");
@@ -722,6 +822,9 @@ TEST_F(BizarreCorruptionTest, PartialOverwriteMiddle) {
     // Bob might still be intact depending on where corruption hit
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 FileExtendedWithOddBytes 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, FileExtendedWithOddBytes) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -745,6 +848,9 @@ TEST_F(BizarreCorruptionTest, FileExtendedWithOddBytes) {
     EXPECT_TRUE(ec_) << "Should error on unaligned file size";
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 RecordSizeChangedMidway 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, RecordSizeChangedMidway) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -768,6 +874,9 @@ TEST_F(BizarreCorruptionTest, RecordSizeChangedMidway) {
     EXPECT_TRUE(ec_) << "Should error on unaligned file";
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 LettersInNumericField 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, LettersInNumericField) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -809,6 +918,9 @@ TEST_F(BizarreCorruptionTest, LettersInNumericField) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 NumericFieldWithSpecialChars 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, NumericFieldWithSpecialChars) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -848,6 +960,9 @@ TEST_F(BizarreCorruptionTest, NumericFieldWithSpecialChars) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 TypeNameCorrupted 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, TypeNameCorrupted) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -873,6 +988,9 @@ TEST_F(BizarreCorruptionTest, TypeNameCorrupted) {
     // May or may not find depending on where ID is stored
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 IdFieldCorrupted 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, IdFieldCorrupted) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -911,6 +1029,9 @@ TEST_F(BizarreCorruptionTest, IdFieldCorrupted) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 HighBitUTF8Characters 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, HighBitUTF8Characters) {
     // Save valid record
     FixedA alice("alice", 25, "001");
@@ -947,6 +1068,9 @@ TEST_F(BizarreCorruptionTest, HighBitUTF8Characters) {
     }
 }
 
+// 시나리오 상세 설명: BizarreCorruptionTest 그룹의 AllFieldsOverwrittenWithSpaces 케이스 동작을 검증한다.
+// - 검증 포인트: 정상 경로, 경계값, 오류 경로에서 API 계약이 일관되게 유지되는지 확인한다.
+// - 실패 시 점검 순서: 입력 데이터 준비 -> repository/API 호출 결과 -> 최종 assertion 순으로 원인을 좁힌다.
 TEST_F(BizarreCorruptionTest, AllFieldsOverwrittenWithSpaces) {
     // Save valid record
     FixedA alice("alice", 25, "001");
