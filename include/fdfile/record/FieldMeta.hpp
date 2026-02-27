@@ -10,7 +10,7 @@
  */
 #pragma once
 /// @file FieldMeta.hpp
-/// @brief C++17 tuple 기반 필드 메타데이터 유틸리티 + 간단한 매크로
+/// @brief C++17 tuple-based field metadata utilities and macros
 
 #include <cstdint>
 #include <cstdio>
@@ -21,21 +21,25 @@
 
 namespace FdFile {
 
-/// @brief int64_t의 최대 자리수 (부호 포함 20자리: +/- + 19자리)
+/// @brief Maximum digits for int64_t (20 characters: sign + 19 digits)
 constexpr size_t INT64_FIELD_LEN = 20;
 
 // =============================================================================
 // FieldMeta Template
 // =============================================================================
 
-/// @brief 필드 메타데이터 구조체
+/// @brief Field metadata structure
+/// @tparam Len Field length in bytes
+/// @tparam IsStr True if string field, false if numeric
 template <size_t Len, bool IsStr> struct FieldMeta {
-    const char* name;
-    void* ptr;
+    const char* name;   ///< Field name
+    void* ptr;          ///< Pointer to field data
 
-    static constexpr size_t length = Len;
-    static constexpr bool isString = IsStr;
+    static constexpr size_t length = Len;       ///< Field length
+    static constexpr bool isString = IsStr;     ///< String type flag
 
+    /// @brief Serialize field value to buffer
+    /// @param buf Output buffer (must be at least Len bytes)
     void get(char* buf) const {
         if constexpr (IsStr) {
             // 고정 길이 문자열 필드는 원본 바이트를 그대로 복사한다.
@@ -53,8 +57,9 @@ template <size_t Len, bool IsStr> struct FieldMeta {
         }
     }
 
-    /// @brief 버퍼에서 값을 읽어 멤버에 설정
-    /// @throws std::runtime_error 유효하지 않은 부호 문자인 경우
+    /// @brief Deserialize field value from buffer
+    /// @param buf Input buffer
+    /// @throws std::runtime_error If sign character is invalid
     void set(const char* buf) {
         if constexpr (IsStr) {
             // 역직렬화 시 기존 버퍼를 먼저 0으로 지워 trailing garbage를 제거한다.
@@ -82,15 +87,24 @@ template <size_t Len, bool IsStr> struct FieldMeta {
 // Helper Functions
 // =============================================================================
 
-/// @brief 문자 배열 필드용 FieldMeta 생성
-/// @note static_assert: 템플릿 길이(Len)와 배열 크기(N)가 일치해야 함
+/// @brief Create FieldMeta for character array fields
+/// @tparam Len Template length parameter
+/// @tparam N Array size (must match Len)
+/// @param name Field name
+/// @param member Reference to char array member
+/// @return FieldMeta instance
+/// @note static_assert ensures template length matches array size
 template <size_t Len, size_t N> auto makeField(const char* name, char (&member)[N]) {
     static_assert(Len == N, "FD_STR: Template length must match array size");
     return FieldMeta<Len, true>{name, static_cast<void*>(member)};
 }
 
-/// @brief 숫자 필드용 FieldMeta 생성 (부호 포함 20자리)
-/// @note static_assert: 멤버 타입이 int64_t여야 함
+/// @brief Create FieldMeta for numeric fields (sign + 19 digits)
+/// @tparam T Field type (must be int64_t)
+/// @param name Field name
+/// @param member Reference to int64_t member
+/// @return FieldMeta instance
+/// @note static_assert ensures member type is int64_t
 template <typename T>
 auto makeNumField(const char* name, T& member) {
     static_assert(std::is_same_v<std::remove_cv_t<T>, int64_t>,
@@ -102,6 +116,7 @@ auto makeNumField(const char* name, T& member) {
 // Tuple Utility Functions
 // =============================================================================
 
+/// @brief Define fields from tuple
 template <typename Base, typename Tuple>
 void defineFieldsFromTuple(Base* base, const Tuple& fields) {
     // tuple에 선언된 필드를 순회하며 레이아웃 엔진(FixedRecordBase)에 필드 정의를 등록한다.
@@ -110,6 +125,7 @@ void defineFieldsFromTuple(Base* base, const Tuple& fields) {
                fields);
 }
 
+/// @brief Get field value by index from tuple
 template <typename Tuple> void getFieldByIndex(const Tuple& fields, size_t idx, char* buf) {
     // 인덱스 기반 접근을 유지해 serialize 루프에서 조건 분기 비용을 최소화한다.
     size_t i = 0;
@@ -117,6 +133,7 @@ template <typename Tuple> void getFieldByIndex(const Tuple& fields, size_t idx, 
                fields);
 }
 
+/// @brief Set field value by index in tuple
 template <typename Tuple> void setFieldByIndex(const Tuple& fields, size_t idx, const char* buf) {
     // tuple 요소가 const로 전달되더라도 set 호출이 가능하도록 const_cast를 사용한다.
     // 이 경로는 내부 구현 전용이며, 외부 API로는 노출되지 않는다.
@@ -139,18 +156,20 @@ template <typename Tuple> void setFieldByIndex(const Tuple& fields, size_t idx, 
 // Simple Macros for Record Definition
 // =============================================================================
 
-/// @brief 문자열 필드 선언 (길이 = 배열 크기)
+/// @brief Declare a string field (length = array size)
+/// @param member Char array member variable
 #define FD_STR(member)                                                                             \
     FdFile::makeField<sizeof(member)>(#member, const_cast<char(&)[sizeof(member)]>(member))
 
-/// @brief 숫자 필드 선언 (길이 = 20, 부호 포함 int64_t)
+/// @brief Declare a numeric field (length = 20, signed int64_t)
+/// @param member int64_t member variable
 #define FD_NUM(member) FdFile::makeNumField(#member, const_cast<int64_t&>(member))
 
-/// @brief 레코드 공통 메서드 구현 매크로
-/// @param ClassName 클래스명
-/// @param TypeNameStr 타입 이름 문자열
-/// @param TypeLen 타입 필드 길이
-/// @param IdLen ID 필드 길이
+/// @brief Macro to implement common record methods
+/// @param ClassName Class name
+/// @param TypeNameStr Type name string
+/// @param TypeLen Type field length
+/// @param IdLen ID field length
 #define FD_RECORD_IMPL(ClassName, TypeNameStr, TypeLen, IdLen)                                     \
   public:                                                                                          \
     ClassName() {                                                                                  \

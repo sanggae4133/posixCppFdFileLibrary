@@ -10,7 +10,7 @@
  */
 #pragma once
 /// @file MmapGuard.hpp
-/// @brief mmap RAII wrapper (내부 구현용)
+/// @brief RAII wrapper for mmap (internal implementation)
 
 #include <cstddef>
 #include <sys/mman.h>
@@ -18,13 +18,16 @@
 namespace FdFile {
 namespace detail {
 
-/// @brief mmap RAII 래퍼
+/// @brief RAII wrapper for mmap
 ///
-/// 매핑된 메모리 영역을 자동으로 해제한다.
+/// Automatically unmaps memory region on destruction.
 class MmapGuard {
   public:
     MmapGuard() = default;
 
+    /// @brief Constructor with mapped memory
+    /// @param ptr Mapped memory pointer
+    /// @param size Size of mapped region
     MmapGuard(void* ptr, size_t size) : ptr_(ptr), size_(size) {
         if (ptr_ == MAP_FAILED) {
             // 호출자가 MAP_FAILED를 넘겼을 때도 객체를 "유효하지 않은 빈 상태"로 정규화한다.
@@ -36,11 +39,11 @@ class MmapGuard {
 
     ~MmapGuard() { reset(); }
 
-    // 복사 금지
+    // Copy prohibited
     MmapGuard(const MmapGuard&) = delete;
     MmapGuard& operator=(const MmapGuard&) = delete;
 
-    // 이동 허용
+    // Move allowed
     MmapGuard(MmapGuard&& other) noexcept : ptr_(other.ptr_), size_(other.size_) {
         other.ptr_ = nullptr;
         other.size_ = 0;
@@ -59,13 +62,22 @@ class MmapGuard {
         return *this;
     }
 
+    /// @brief Returns mapped memory pointer
     void* get() const noexcept { return ptr_; }
+    
+    /// @brief Returns mapped region size
     size_t size() const noexcept { return size_; }
+    
+    /// @brief Checks if mapping is valid
     bool valid() const noexcept { return ptr_ != nullptr; }
+    
+    /// @brief Bool conversion operator
     explicit operator bool() const noexcept { return valid(); }
 
+    /// @brief Returns data pointer as char*
     char* data() const noexcept { return static_cast<char*>(ptr_); }
 
+    /// @brief Unmaps current region
     void reset() noexcept {
         if (ptr_) {
             // munmap은 커널 자원을 반환하는 핵심 호출이므로,
@@ -76,7 +88,9 @@ class MmapGuard {
         }
     }
 
-    /// @brief 새 매핑으로 교체
+    /// @brief Replaces with new mapping
+    /// @param ptr New mapped memory pointer
+    /// @param size New region size
     void reset(void* ptr, size_t size) noexcept {
         reset();
         if (ptr != MAP_FAILED) {
@@ -85,7 +99,9 @@ class MmapGuard {
         }
     }
 
-    /// @brief 변경사항을 디스크에 동기화
+    /// @brief Syncs changes to disk
+    /// @param async If true, use MS_ASYNC; otherwise MS_SYNC
+    /// @return true on success
     bool sync(bool async = false) noexcept {
         if (!ptr_)
             return false;

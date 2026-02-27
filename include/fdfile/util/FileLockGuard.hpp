@@ -10,7 +10,7 @@
  */
 #pragma once
 /// @file FileLockGuard.hpp
-/// @brief POSIX fcntl 파일 잠금용 RAII 가드 (내부 구현용)
+/// @brief RAII guard for POSIX fcntl file locking (internal implementation)
 
 #include <errno.h>
 #include <fcntl.h>
@@ -21,44 +21,44 @@
 namespace FdFile {
 namespace detail {
 
-/// @brief POSIX fcntl 파일 잠금용 RAII 가드
+/// @brief RAII guard for POSIX fcntl file locking
 ///
-/// 생성 시 잠금을 획득하고 소멸 시 자동으로 해제한다.
-/// 공유 잠금(읽기용)과 배타 잠금(쓰기용)을 지원한다.
+/// Acquires lock on construction and releases on destruction.
+/// Supports both shared (read) and exclusive (write) locks.
 ///
-/// @note 이 클래스는 라이브러리 내부 구현용이다.
-/// @note 블로킹 모드(F_SETLKW)로 동작하므로 잠금 획득까지 대기한다.
+/// @note This class is for internal library use.
+/// @note Operates in blocking mode (F_SETLKW), waits until lock is acquired.
 class FileLockGuard {
   public:
-    /// @brief 잠금 모드
+    /// @brief Lock mode
     enum class Mode {
-        Shared,   ///< 공유 잠금 (읽기용, 여러 프로세스가 동시에 획득 가능)
-        Exclusive ///< 배타 잠금 (쓰기용, 단일 프로세스만 획득 가능)
+        Shared,   ///< Shared lock (read, multiple processes can acquire simultaneously)
+        Exclusive ///< Exclusive lock (write, only one process can acquire)
     };
 
-    /// @brief 기본 생성자. 잠금 없이 생성
+    /// @brief Default constructor. Creates without acquiring lock
     FileLockGuard() = default;
 
-    /// @brief 파일 잠금을 획득하며 생성
-    /// @param fd 잠금할 파일 디스크립터
-    /// @param mode 잠금 모드
-    /// @param ec 에러 코드 (실패 시 설정)
+    /// @brief Constructor that acquires file lock
+    /// @param fd File descriptor to lock
+    /// @param mode Lock mode
+    /// @param ec Error code (set on failure)
     FileLockGuard(int fd, Mode mode, std::error_code& ec) { lock(fd, mode, ec); }
 
-    /// @brief 소멸자. 잠금이 있으면 해제
+    /// @brief Destructor. Releases lock if held
     ~FileLockGuard() { unlockIgnore(); }
 
-    // 복사 금지
+    // Copy prohibited
     FileLockGuard(const FileLockGuard&) = delete;
     FileLockGuard& operator=(const FileLockGuard&) = delete;
 
-    /// @brief 이동 생성자
+    /// @brief Move constructor
     FileLockGuard(FileLockGuard&& other) noexcept : fd_(other.fd_), locked_(other.locked_) {
         other.fd_ = -1;
         other.locked_ = false;
     }
 
-    /// @brief 이동 대입 연산자
+    /// @brief Move assignment operator
     FileLockGuard& operator=(FileLockGuard&& other) noexcept {
         if (this != &other) {
             unlockIgnore();
@@ -70,12 +70,12 @@ class FileLockGuard {
         return *this;
     }
 
-    /// @brief 파일 잠금 획득
-    /// @param fd 잠금할 파일 디스크립터
-    /// @param mode 잠금 모드
-    /// @param ec 에러 코드
-    /// @return 성공 시 true
-    /// @note 기존 잠금이 있으면 먼저 해제한다
+    /// @brief Acquire file lock
+    /// @param fd File descriptor to lock
+    /// @param mode Lock mode
+    /// @param ec Error code
+    /// @return true on success
+    /// @note Releases existing lock first if held
     bool lock(int fd, Mode mode, std::error_code& ec) {
         ec.clear();
         // 동일 객체에서 잠금 대상을 바꾸는 경우를 허용하기 위해 기존 잠금부터 정리한다.
@@ -94,7 +94,7 @@ class FileLockGuard {
         fl.l_type = (mode == Mode::Shared) ? F_RDLCK : F_WRLCK;
         fl.l_whence = SEEK_SET;
         fl.l_start = 0;
-        fl.l_len = 0; // 0 = 파일 전체
+        fl.l_len = 0; // 0 = entire file
         if (::fcntl(fd_, F_SETLKW, &fl) < 0) {
             ec = std::error_code(errno, std::generic_category());
             fd_ = -1;
@@ -106,7 +106,7 @@ class FileLockGuard {
         return true;
     }
 
-    /// @brief 잠금 해제 (에러 무시)
+    /// @brief Release lock (ignores errors)
     void unlockIgnore() noexcept {
         if (!locked_ || fd_ < 0)
             return;
@@ -122,8 +122,8 @@ class FileLockGuard {
         fd_ = -1;
     }
 
-    /// @brief 현재 잠금 상태 확인
-    /// @return 잠금이 활성화되어 있으면 true
+    /// @brief Check current lock status
+    /// @return true if lock is held
     bool locked() const noexcept { return locked_; }
 
   private:

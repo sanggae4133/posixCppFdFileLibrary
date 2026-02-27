@@ -18,7 +18,7 @@
 
 #include "records/FixedA.hpp"
 #include "records/FixedB.hpp"
-#include "repository/UniformFixedRepositoryImpl.hpp"
+#include <fdfile/repository/UniformFixedRepositoryImpl.hpp>
 
 using namespace FdFile;
 

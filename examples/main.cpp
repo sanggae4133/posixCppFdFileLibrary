@@ -1,40 +1,27 @@
-/**
- * @file examples/main.cpp
- * @brief 코드 이해를 위한 한국어 상세 주석 블록.
- * @details
- * - 이 파일은 API 사용 순서와 레코드 모델링 방식을 빠르게 이해할 수 있도록 제공되는 실행 예제 코드입니다.
- * - 예제는 학습 목적의 최소 흐름을 보여주므로 실제 서비스 코드에서는 에러 처리, 검증, 동시성 제어를 더 강화해야 합니다.
- * - 필드 길이/타입/ID 정책을 변경하면 파일 포맷 결과가 달라질 수 있으므로 출력 데이터와 호환성을 함께 확인해야 합니다.
- * - 예제에서 사용하는 값은 설명용 샘플이며, 운영 환경에서는 입력 정합성과 보안 제약을 별도로 검토해야 합니다.
- * - 신규 예제를 추가할 때는 '정의 -> 저장 -> 조회 -> 검증'의 전체 lifecycle이 끊기지 않도록 구성하는 것이 좋습니다.
- */
 #include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
 
-// Record 모델 정의
+// Main library header
+#include <fdfile/fdfile.hpp>
+
+// Example records
 #include "records/A.hpp"      // Variable Record
 #include "records/B.hpp"      // Variable Record
 #include "records/FixedA.hpp" // Fixed Record
 #include "records/FixedB.hpp" // Fixed Record
 
-// Repository 구현
-#include "repository/UniformFixedRepositoryImpl.hpp"
-#include "repository/VariableFileRepositoryImpl.hpp"
-
 using namespace FdFile;
 
 // =============================================================================
-// 테스트 출력 헬퍼 매크로
+// Helper Macros for Test Output
 // =============================================================================
 
 #define TEST_SECTION(name) std::cout << "\n=== " << name << " ===\n"
 #define TEST_CASE(name) std::cout << "\n--- " << name << " ---\n"
 #define TEST_PASS(msg) std::cout << "[PASS] " << msg << "\n"
 #define TEST_FAIL(msg) std::cout << "[FAIL] " << msg << "\n"
-// CHECK_EC는 에러 코드가 설정되면 현재 테스트 함수를 즉시 종료한다.
-// 예제 코드에서 실패 지점을 빠르게 드러내기 위한 fail-fast 장치다.
 #define CHECK_EC(ec, context)                                                                      \
     if (ec) {                                                                                      \
         TEST_FAIL(context << ": " << ec.message());                                                \
@@ -42,15 +29,14 @@ using namespace FdFile;
     }
 
 // =============================================================================
-// Variable Record 시나리오
+// Variable Record Tests
 // =============================================================================
 
-// 가변 길이 저장소에서 Insert/Update/Find/Delete 전체 흐름을 검증한다.
 void testVariable() {
     TEST_SECTION("Variable Repository Tests");
     std::error_code ec;
 
-    // 테스트 재현성을 위해 이전 실행 결과 파일을 제거하고 깨끗한 상태에서 시작한다.
+    // Clean start - delete existing file
     ::remove("./test_var.txt");
 
     std::vector<std::unique_ptr<VariableRecordBase>> protos;
@@ -61,7 +47,7 @@ void testVariable() {
     CHECK_EC(ec, "Repo init");
 
     // =========================================================================
-    // 1) 서로 다른 type(A/B) 레코드를 혼합 삽입
+    // 1. Insert Multiple Records (Mixed Types)
     // =========================================================================
     TEST_CASE("Insert Multiple Records (Mixed Types)");
 
@@ -101,7 +87,7 @@ void testVariable() {
     }
 
     // =========================================================================
-    // 2) 동일 ID upsert 동작 검증
+    // 2. Update Existing Record
     // =========================================================================
     TEST_CASE("Update Existing Record");
 
@@ -110,7 +96,7 @@ void testVariable() {
     CHECK_EC(ec, "Update alice");
     TEST_PASS("Updated alice's name to 'alice_updated'");
 
-    // update 결과를 즉시 재조회해 실제 디스크/캐시에 반영됐는지 확인한다.
+    // Verify update
     auto foundAlice = repo.findById("1", ec);
     CHECK_EC(ec, "FindById alice after update");
     if (foundAlice) {
@@ -125,7 +111,7 @@ void testVariable() {
         TEST_FAIL("Alice not found after update");
     }
 
-    // upsert는 insert가 아니므로 총 개수는 유지되어야 한다.
+    // Count should still be 5 (update, not insert)
     cnt = repo.count(ec);
     if (cnt == 5) {
         TEST_PASS("Count unchanged after update (still 5)");
@@ -134,7 +120,7 @@ void testVariable() {
     }
 
     // =========================================================================
-    // 3) FindById 동작 검증
+    // 3. FindById
     // =========================================================================
     TEST_CASE("FindById");
 
@@ -147,7 +133,7 @@ void testVariable() {
         TEST_FAIL("Bob not found");
     }
 
-    // type이 다른 B 레코드도 동일 API로 조회 가능한지 확인한다.
+    // Find B type record
     auto foundUser1 = repo.findById("101", ec);
     CHECK_EC(ec, "FindById user1");
     if (foundUser1) {
@@ -160,7 +146,7 @@ void testVariable() {
         TEST_FAIL("User1 not found");
     }
 
-    // 존재하지 않는 ID는 nullptr 반환이 계약이다.
+    // Non-existent ID
     auto notFound = repo.findById("999", ec);
     CHECK_EC(ec, "FindById non-existent");
     if (!notFound) {
@@ -170,7 +156,7 @@ void testVariable() {
     }
 
     // =========================================================================
-    // 4) FindAll 결과 검증
+    // 4. FindAll
     // =========================================================================
     TEST_CASE("FindAll");
 
@@ -187,7 +173,7 @@ void testVariable() {
     }
 
     // =========================================================================
-    // 5) ExistsById true/false 분기 검증
+    // 5. ExistsById
     // =========================================================================
     TEST_CASE("ExistsById");
 
@@ -208,11 +194,11 @@ void testVariable() {
     }
 
     // =========================================================================
-    // 6) DeleteById 및 후속 상태 검증
+    // 6. DeleteById
     // =========================================================================
     TEST_CASE("DeleteById");
 
-    repo.deleteById("2", ec); // bob 삭제
+    repo.deleteById("2", ec); // Delete bob
     CHECK_EC(ec, "DeleteById bob");
     TEST_PASS("Deleted bob (id=2)");
 
@@ -224,7 +210,7 @@ void testVariable() {
         TEST_FAIL("Count should be 4, got " + std::to_string(cnt));
     }
 
-    // 삭제 직후 단건 조회가 실패해야 한다.
+    // Verify bob is gone
     auto deletedBob = repo.findById("2", ec);
     if (!deletedBob) {
         TEST_PASS("Bob no longer exists");
@@ -233,7 +219,7 @@ void testVariable() {
     }
 
     // =========================================================================
-    // 7) DeleteAll 동작 검증
+    // 7. DeleteAll
     // =========================================================================
     TEST_CASE("DeleteAll");
 
@@ -250,7 +236,7 @@ void testVariable() {
     }
 
     // =========================================================================
-    // 8) 전체 삭제 이후 재삽입 가능성 검증
+    // 8. Re-insert after DeleteAll
     // =========================================================================
     TEST_CASE("Re-insert After DeleteAll");
 
@@ -269,22 +255,21 @@ void testVariable() {
 }
 
 // =============================================================================
-// FixedA 시나리오
+// Fixed Record Tests (FixedA)
 // =============================================================================
 
-// 고정 길이 레코드 저장소(FixedA)의 CRUD 및 경계값을 검증한다.
 void testFixedA() {
     TEST_SECTION("Fixed Repository Tests (FixedA)");
     std::error_code ec;
 
-    // 이전 테스트 파일 제거
+    // Clean start - delete existing file
     ::remove("./test_fixed_a.txt");
 
     UniformFixedRepositoryImpl<FixedA> repo("./test_fixed_a.txt", ec);
     CHECK_EC(ec, "Repo init");
 
     // =========================================================================
-    // 1) 다건 삽입
+    // 1. Insert Multiple Records
     // =========================================================================
     TEST_CASE("Insert Multiple Records");
 
@@ -314,16 +299,16 @@ void testFixedA() {
     }
 
     // =========================================================================
-    // 2) 기존 ID upsert
+    // 2. Update Existing Record (Upsert)
     // =========================================================================
     TEST_CASE("Update Existing Record");
 
-    bob.age = 31; // 나이 갱신
+    bob.age = 31; // Update age
     repo.save(bob, ec);
     CHECK_EC(ec, "Update bob");
     TEST_PASS("Updated bob's age to 31");
 
-    // 갱신 검증
+    // Verify update
     auto foundBob = repo.findById("002", ec);
     CHECK_EC(ec, "FindById bob");
     if (foundBob && foundBob->age == 31) {
@@ -332,7 +317,7 @@ void testFixedA() {
         TEST_FAIL("Update verification failed");
     }
 
-    // upsert이므로 개수는 변하지 않아야 한다.
+    // Count should still be 3 (update, not insert)
     cnt = repo.count(ec);
     if (cnt == 3) {
         TEST_PASS("Count unchanged after update (still 3)");
@@ -341,7 +326,7 @@ void testFixedA() {
     }
 
     // =========================================================================
-    // 3) FindById
+    // 3. FindById
     // =========================================================================
     TEST_CASE("FindById");
 
@@ -355,7 +340,7 @@ void testFixedA() {
         TEST_FAIL("Alice not found");
     }
 
-    // 미존재 ID 조회
+    // Non-existent ID
     auto notFound = repo.findById("999", ec);
     CHECK_EC(ec, "FindById non-existent");
     if (!notFound) {
@@ -365,7 +350,7 @@ void testFixedA() {
     }
 
     // =========================================================================
-    // 4) FindAll
+    // 4. FindAll
     // =========================================================================
     TEST_CASE("FindAll");
 
@@ -383,7 +368,7 @@ void testFixedA() {
     }
 
     // =========================================================================
-    // 5) ExistsById
+    // 5. ExistsById
     // =========================================================================
     TEST_CASE("ExistsById");
 
@@ -404,11 +389,11 @@ void testFixedA() {
     }
 
     // =========================================================================
-    // 6) DeleteById
+    // 6. DeleteById
     // =========================================================================
     TEST_CASE("DeleteById");
 
-    repo.deleteById("002", ec); // bob 삭제
+    repo.deleteById("002", ec); // Delete bob
     CHECK_EC(ec, "DeleteById bob");
     TEST_PASS("Deleted bob (id=002)");
 
@@ -420,7 +405,7 @@ void testFixedA() {
         TEST_FAIL("Count should be 2");
     }
 
-    // 삭제 검증
+    // Verify bob is gone
     auto deletedBob = repo.findById("002", ec);
     if (!deletedBob) {
         TEST_PASS("Bob no longer exists");
@@ -429,7 +414,7 @@ void testFixedA() {
     }
 
     // =========================================================================
-    // 7) DeleteAll
+    // 7. DeleteAll
     // =========================================================================
     TEST_CASE("DeleteAll");
 
@@ -446,17 +431,17 @@ void testFixedA() {
     }
 
     // =========================================================================
-    // 8) 경계값(Edge Cases)
+    // 8. Edge Cases
     // =========================================================================
     TEST_CASE("Edge Cases");
 
-    // 빈 문자열 필드
+    // Empty name
     FixedA emptyName("", 0, "E01");
     repo.save(emptyName, ec);
     CHECK_EC(ec, "Save empty name");
     TEST_PASS("Saved record with empty name");
 
-    // 최대 int64 숫자 보존 검증
+    // Large number
     FixedA largeAge("max", 9223372036854775807LL, "E02"); // INT64_MAX
     repo.save(largeAge, ec);
     CHECK_EC(ec, "Save large age");
@@ -473,21 +458,20 @@ void testFixedA() {
 }
 
 // =============================================================================
-// FixedB 시나리오
+// Fixed Record Tests (FixedB)
 // =============================================================================
 
-// FixedB 타입으로 고정 길이 레코드 저장/조회/갱신 흐름을 점검한다.
 void testFixedB() {
     TEST_SECTION("Fixed Repository Tests (FixedB)");
     std::error_code ec;
 
-    // 시작 전 파일 초기화
+    // Clean start
     ::remove("./test_fixed_b.txt");
 
     UniformFixedRepositoryImpl<FixedB> repo("./test_fixed_b.txt", ec);
     CHECK_EC(ec, "Repo init");
 
-    // 삽입 시나리오
+    // Insert
     TEST_CASE("Insert FixedB Records");
 
     FixedB item1("Laptop", 1500000, "P001");
@@ -503,7 +487,7 @@ void testFixedB() {
 
     TEST_PASS("Saved 3 FixedB records");
 
-    // 전체 조회 시나리오
+    // FindAll
     TEST_CASE("FindAll FixedB");
     auto all = repo.findAll(ec);
     CHECK_EC(ec, "FindAll");
@@ -519,9 +503,9 @@ void testFixedB() {
         TEST_FAIL("FindAll count mismatch");
     }
 
-    // 갱신 시나리오
+    // Update
     TEST_CASE("Update FixedB");
-    item2.cost = 750000; // 가격 인하
+    item2.cost = 750000; // Discount!
     repo.save(item2, ec);
     CHECK_EC(ec, "Update item2");
 
@@ -536,7 +520,7 @@ void testFixedB() {
 }
 
 // =============================================================================
-// Main Entry
+// Main
 // =============================================================================
 
 int main() {

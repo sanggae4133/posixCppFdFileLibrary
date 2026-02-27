@@ -1,4 +1,7 @@
-# PosixCppFdFileLibrary (FdFileLib)
+# FdFileLib
+
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/std/the-standard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A high-performance C++17 file repository library using POSIX APIs (`open`, `read`, `write`, `fsync`, `flock`) and `mmap` for efficient I/O. Supports both **Variable-Length (JSON-like)** and **Strict Fixed-Length (Binary)** record formats.
 
@@ -14,7 +17,91 @@ A high-performance C++17 file repository library using POSIX APIs (`open`, `read
 | **External Modification Detection** | Auto-reload when external process modifies file |
 | **File Locking** | `fcntl` based shared/exclusive locks for concurrency |
 | **Upsert Semantics** | `save()` automatically inserts or updates |
-| **155 Unit Tests** | Comprehensive GoogleTest coverage |
+| **149 Unit Tests** | Comprehensive GoogleTest coverage |
+
+---
+
+## Requirements
+
+| Requirement | Version |
+|-------------|---------|
+| C++ Standard | C++17 |
+| Compiler | GCC 7+, Clang 5+, Apple Clang 10+ |
+| CMake | 3.16+ |
+| Platform | POSIX (Linux/macOS) |
+| Google Test | (optional, for tests) |
+
+---
+
+## Quick Start
+
+### Installation
+
+**Using CMake FetchContent (Recommended):**
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(
+    fdfilelib
+    GIT_REPOSITORY https://github.com/your-repo/fdfilelib.git
+    GIT_TAG v1.0.0
+)
+# Examples and tests are automatically disabled when used as subdirectory
+FetchContent_MakeAvailable(fdfilelib)
+
+target_link_libraries(your_app PRIVATE fdfile::fdfile)
+```
+
+**Using as subdirectory:**
+
+```cmake
+add_subdirectory(external/fdfilelib)
+target_link_libraries(your_app PRIVATE fdfile::fdfile)
+```
+
+**Using find_package (after installation):**
+
+```cmake
+find_package(fdfile REQUIRED)
+target_link_libraries(your_app PRIVATE fdfile::fdfile)
+```
+
+### Single Header Include
+
+```cpp
+#include <fdfile.hpp>  // Include everything
+```
+
+---
+
+## Building from Source
+
+```bash
+# Clone
+git clone <repo-url>
+cd posixCppFdFileLibrary
+
+# Build
+mkdir build && cd build
+cmake ..
+cmake --build . -j
+
+# Run tests
+ctest --output-on-failure
+
+# Install (optional)
+cmake --install . --prefix /usr/local
+```
+
+### CMake Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `FDFILE_BUILD_EXAMPLES` | ON* | Build example programs |
+| `FDFILE_BUILD_TESTS` | ON* | Build unit tests |
+| `FDFILE_INSTALL` | ON | Generate install target |
+
+*\*When used as subdirectory, defaults to OFF*
 
 ---
 
@@ -22,13 +109,12 @@ A high-performance C++17 file repository library using POSIX APIs (`open`, `read
 
 ```
 posixCppFdFileLibrary/
-├── CMakeLists.txt              # Root CMake (options/tests/install/package export)
+├── CMakeLists.txt              # Root CMake configuration
 ├── cmake/
-│   └── FdFileLibConfig.cmake.in # Package config template
-├── compile.sh                  # Build script
-├── run.sh                      # Run example
+│   └── fdfileConfig.cmake.in   # find_package() support template
 │
 ├── fdFileLib/                  # Core Library
+│   ├── fdfile.hpp              # Single header entry point
 │   ├── record/
 │   │   ├── RecordBase.hpp          # Base interface
 │   │   ├── VariableRecordBase.hpp  # Variable-length (Virtual)
@@ -50,111 +136,22 @@ posixCppFdFileLibrary/
 │       ├── FixedA.hpp, FixedB.hpp  # Fixed record examples
 │       └── A.hpp, B.hpp            # Variable record examples
 │
-└── tests/                      # GoogleTest Unit Tests (155 tests)
+└── tests/                      # GoogleTest Unit Tests (149 tests)
     ├── CMakeLists.txt
-    ├── unit/                   # 단위 테스트 (개별 클래스)
-    │   ├── UniqueFdTest.cpp        # 9 tests
-    │   ├── MmapGuardTest.cpp       # 8 tests
-    │   ├── FileLockGuardTest.cpp   # 9 tests
-    │   ├── FieldMetaTest.cpp       # 19 tests
-    │   └── UtilTest.cpp            # 17 tests
-    ├── scenario/               # 시나리오 테스트 (기능 흐름)
-    │   ├── FixedRecordScenarioTest.cpp   # 8 tests
-    │   └── VariableRecordScenarioTest.cpp # 8 tests
-    ├── integration/            # 통합 테스트 (동시성, 권한, 손상)
-    │   ├── ConcurrencyTest.cpp     # 4 tests
-    │   └── FilePermissionTest.cpp  # 5 tests
-    ├── FixedRecordTest.cpp     # 38 tests (CRUD + corruption)
-    └── VariableRecordTest.cpp  # 30 tests (CRUD + corruption)
+    ├── unit/                   # Unit tests
+    ├── scenario/               # Scenario tests
+    └── integration/            # Integration tests
 ```
 
 ---
 
-## Getting Started
+## Usage Guide
 
-### Prerequisites
-- **C++17** compiler (GCC 7+, Clang 5+, Apple Clang 10+)
-- **CMake** 3.16+
-- **POSIX** environment (Linux/macOS)
-
-### Build
-
-```bash
-git clone <repo-url>
-cd posixCppFdFileLibrary
-
-cmake -S . -B build
-cmake --build build -j
-
-# Or use the script
-./compile.sh
-```
-
-### CMake Options
-
-| Option | Default (Standalone) | Default (Subdirectory) | Description |
-|--------|-----------------------|-------------------------|-------------|
-| `FDFILE_BUILD_EXAMPLES` | `ON` | `OFF` | Build example executable (`fdfile_example`) |
-| `FDFILE_BUILD_TESTS` | `ON` | `OFF` | Build GoogleTest suite (`fdfile_tests`) |
-| `FDFILE_RUN_TESTS` | `OFF` | `OFF` | Run tests automatically after build |
-| `FDFILE_INSTALL` | `ON` | `ON` | Generate `install`/package export targets |
-
-```bash
-# Example: library-only build
-cmake -S . -B build -DFDFILE_BUILD_EXAMPLES=OFF -DFDFILE_BUILD_TESTS=OFF
-cmake --build build -j
-```
-
-### Run Tests
-
-```bash
-ctest --test-dir build --output-on-failure
-
-# Run specific suite
-./build/tests/fdfile_tests --gtest_filter="Concurrency*"
-./build/tests/fdfile_tests --gtest_filter="FieldMeta*"
-```
-
-### Install And Consume (`find_package`)
-
-```bash
-# Install to a custom prefix
-cmake --install build --prefix /tmp/fdfilelib-install
-```
-
-```cmake
-# Consumer project CMakeLists.txt
-cmake_minimum_required(VERSION 3.16)
-project(MyApp LANGUAGES CXX)
-
-find_package(FdFileLib REQUIRED)
-
-add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE fdfile::fdfile)
-```
-
-```bash
-# Configure consumer with installed package path
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/tmp/fdfilelib-install
-cmake --build build
-```
-
-### Use As Subdirectory
-
-```cmake
-add_subdirectory(external/posixCppFdFileLibrary)
-target_link_libraries(my_app PRIVATE fdfile::fdfile)
-```
-
----
-
-# [English] Complete Usage Guide
-
-## 1. Fixed-Length Records (Recommended)
+### 1. Fixed-Length Records (Recommended)
 
 Fixed-length records are stored in binary format with `mmap` for maximum performance.
 
-### Key Features
+#### Key Features
 
 | Feature | Implementation |
 |---------|----------------|
@@ -163,12 +160,11 @@ Fixed-length records are stored in binary format with `mmap` for maximum perform
 | **File Locking** | Shared lock (read), Exclusive lock (write) |
 | **Auto Cache Rebuild** | On external file change, cache auto-refreshes |
 
-### Step 1: Define Your Record
+#### Step 1: Define Your Record
 
 ```cpp
 #pragma once
-#include "record/FieldMeta.hpp"
-#include "record/FixedRecordBase.hpp"
+#include <fdfile.hpp>
 #include <cstring>
 
 class User : public FdFile::FixedRecordBase<User> {
@@ -203,10 +199,10 @@ public:
 };
 ```
 
-### Step 2: Use Repository
+#### Step 2: Use Repository
 
 ```cpp
-#include "repository/UniformFixedRepositoryImpl.hpp"
+#include <fdfile.hpp>
 
 int main() {
     std::error_code ec;
@@ -238,11 +234,13 @@ int main() {
 
 ---
 
-## 2. Variable-Length Records
+### 2. Variable-Length Records
 
 JSON-like format for flexibility. Uses virtual polymorphism.
 
 ```cpp
+#include <fdfile.hpp>
+
 class Config : public FdFile::VariableRecordBase {
 public:
     std::string key, value;
@@ -287,94 +285,33 @@ FdFile::VariableFileRepositoryImpl repo("config.txt", std::move(protos), ec);
 
 ---
 
-# [Korean] 전체 사용 가이드
+## Testing
 
-## 1. 고정 길이 레코드 (권장)
+### Test Categories
 
-고정 길이 레코드는 `mmap`을 사용한 바이너리 형식으로 최대 성능을 제공합니다.
-
-### 주요 기능
-
-| 기능 | 구현 |
-|------|------|
-| **O(1) 조회** | 내부 `unordered_map<id, index>` 캐시 |
-| **외부 수정 감지** | 모든 작업 전 `fstat()`으로 mtime/size 확인 |
-| **파일 잠금** | 읽기(Shared lock), 쓰기(Exclusive lock) |
-| **자동 캐시 리빌드** | 외부 파일 변경 시 캐시 자동 갱신 |
-
-### 단계 1: 레코드 정의
-
-```cpp
-class User : public FdFile::FixedRecordBase<User> {
-public:
-    char name[20];    // 20바이트 고정
-    int64_t age;      // 20자리 (+/- + 19자리)
-
-private:
-    auto fields() const {
-        return std::make_tuple(FD_STR(name), FD_NUM(age));
-    }
-
-    void initMembers() {
-        std::memset(name, 0, sizeof(name));
-        age = 0;
-    }
-
-    FD_RECORD_IMPL(User, "User", 10, 10)
-};
-```
-
-### 단계 2: 리포지토리 사용
-
-```cpp
-std::error_code ec;
-FdFile::UniformFixedRepositoryImpl<User> repo("users.db", ec);
-
-// CRUD 작업
-repo.save(User("Alice", 30, "001"), ec);  // 삽입/수정
-auto found = repo.findById("001", ec);     // O(1) 조회
-repo.deleteById("001", ec);                // 삭제
-```
-
----
-
-## Testing (테스트)
-
-### Test Categories (테스트 분류)
-
-| Category | Directory | Description |
-|----------|-----------|-------------|
-| **Unit** | `tests/unit/` | 개별 클래스/함수 |
-| **Scenario** | `tests/scenario/` | 기능 흐름 |
-| **Integration** | `tests/integration/` | 동시성, 권한, 손상 |
-| **Corruption** | `tests/*.cpp` | 파일 손상 시나리오 |
-
-### Unit Tests
-
-| Test File | Tests | Description |
-|-----------|-------|-------------|
-| `UniqueFdTest.cpp` | 9 | FD RAII wrapper |
-| `MmapGuardTest.cpp` | 8 | mmap RAII wrapper |
-| `FileLockGuardTest.cpp` | 9 | fcntl lock wrapper |
-| `FieldMetaTest.cpp` | 19 | Field 직렬화/역직렬화 |
-| `UtilTest.cpp` | 17 | 텍스트 포맷 유틸리티 |
+| Category | Directory | Tests | Description |
+|----------|-----------|-------|-------------|
+| **Unit** | `tests/unit/` | 62 | Individual classes/functions |
+| **Scenario** | `tests/scenario/` | 16 | Feature workflows |
+| **Integration** | `tests/integration/` | 9 | Concurrency, permissions |
+| **Corruption** | `tests/*.cpp` | 62 | File corruption scenarios |
 
 ### Run Tests
 
 ```bash
-# 전체 테스트 실행
+# All tests
 cd build && ctest --output-on-failure
 
-# 특정 테스트만
+# Specific tests
 ./tests/fdfile_tests --gtest_filter="FieldMeta*"
 ./tests/fdfile_tests --gtest_filter="*Corruption*"
 
-# 결과: 100% tests passed, 0 tests failed out of 155
+# Result: 100% tests passed, 0 tests failed out of 149
 ```
 
 ---
 
-## Architecture (아키텍처)
+## Architecture
 
 ### CRTP Pattern
 
@@ -403,6 +340,17 @@ return record at index
 
 ---
 
+## cmake/ Directory
+
+The `cmake/fdfileConfig.cmake.in` file is a template for CMake package configuration. When you run `cmake --install`, it generates `fdfileConfig.cmake` that allows other projects to use this library via:
+
+```cmake
+find_package(fdfile REQUIRED)
+target_link_libraries(your_app PRIVATE fdfile::fdfile)
+```
+
+---
+
 ## License
 
-MIT License
+MIT License - see [LICENSE](LICENSE) file for details.

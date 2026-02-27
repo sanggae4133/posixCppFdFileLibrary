@@ -10,7 +10,7 @@
  */
 #pragma once
 /// @file RecordRepository.hpp
-/// @brief Repository 템플릿 인터페이스
+/// @brief Repository template interface
 
 #include <memory>
 #include <string>
@@ -19,12 +19,9 @@
 
 namespace FdFile {
 
-/// @brief 레코드 저장소 인터페이스 (템플릿)
-/// @tparam T 레코드 타입 (Duck Typing: id(), typeName() 등 필요)
+/// @brief Record repository interface (template)
+/// @tparam T Record type (Duck Typing: requires id(), typeName(), etc.)
 template <typename T> class RecordRepository {
-    // static_assert(std::is_base_of_v<RecordBase, T>, "T must inherit from RecordBase"); // CRTP
-    // 지원을 위해 제거
-
   public:
     virtual ~RecordRepository() = default;
 
@@ -32,20 +29,34 @@ template <typename T> class RecordRepository {
     // CRUD Operations
     // =========================================================================
 
-    /// @brief 단건 저장 (Insert or Update)
+    /// @brief Save single record (Insert or Update)
+    /// @param record Record to save
+    /// @param ec Error code set on failure
+    /// @return true on success
     virtual bool save(const T& record, std::error_code& ec) = 0;
 
-    /// @brief 다건 저장
+    /// @brief Save multiple records
+    /// @param records Vector of record pointers to save
+    /// @param ec Error code set on failure
+    /// @return true on success
     virtual bool saveAll(const std::vector<const T*>& records, std::error_code& ec) = 0;
 
-    /// @brief 전체 조회
+    /// @brief Find all records
+    /// @param ec Error code set on failure
+    /// @return Vector of all records
     virtual std::vector<std::unique_ptr<T>> findAll(std::error_code& ec) = 0;
 
-    /// @brief ID로 조회
+    /// @brief Find record by ID
+    /// @param id Record ID to search
+    /// @param ec Error code set on failure
+    /// @return Found record or nullptr
     virtual std::unique_ptr<T> findById(const std::string& id, std::error_code& ec) = 0;
 
-    /// @brief 조건 조회 (Type)
-    /// @note T가 이미 타입 정보를 포함할 수 있으므로, 하위 타입 검색용
+    /// @brief Find all records by type
+    /// @tparam SubT Subtype to search for
+    /// @param ec Error code set on failure
+    /// @return Vector of records matching the type
+    /// @note Since T may already contain type information, this is for subtype searches
     template <typename SubT> std::vector<std::unique_ptr<SubT>> findAllByType(std::error_code& ec) {
         auto all = findAll(ec);
         std::vector<std::unique_ptr<SubT>> result;
@@ -64,7 +75,11 @@ template <typename T> class RecordRepository {
         return result;
     }
 
-    /// @brief ID + Type 조회
+    /// @brief Find record by ID and type
+    /// @tparam SubT Subtype to search for
+    /// @param id Record ID to search
+    /// @param ec Error code set on failure
+    /// @return Found record or nullptr
     template <typename SubT>
     std::unique_ptr<SubT> findByIdAndType(const std::string& id, std::error_code& ec) {
         auto found = findById(id, ec);
@@ -79,16 +94,26 @@ template <typename T> class RecordRepository {
         return nullptr;
     }
 
-    /// @brief 삭제
+    /// @brief Delete record by ID
+    /// @param id Record ID to delete
+    /// @param ec Error code set on failure
+    /// @return true on success
     virtual bool deleteById(const std::string& id, std::error_code& ec) = 0;
 
-    /// @brief 전체 삭제
+    /// @brief Delete all records
+    /// @param ec Error code set on failure
+    /// @return true on success
     virtual bool deleteAll(std::error_code& ec) = 0;
 
-    /// @brief 개수 반환
+    /// @brief Get record count
+    /// @param ec Error code set on failure
+    /// @return Number of records
     virtual size_t count(std::error_code& ec) = 0;
 
-    /// @brief 존재 여부 확인
+    /// @brief Check if record exists by ID
+    /// @param id Record ID to check
+    /// @param ec Error code set on failure
+    /// @return true if record exists
     virtual bool existsById(const std::string& id, std::error_code& ec) = 0;
 };
 

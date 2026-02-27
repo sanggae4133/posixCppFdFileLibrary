@@ -33,14 +33,15 @@ add_executable(fdfile_tests
     ${INTEGRATION_TEST_SOURCES}
 )
 
-# Include paths
+# Include paths - use new include directory structure
 target_include_directories(fdfile_tests PRIVATE
-    ${PROJECT_SOURCE_DIR}/examples
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/examples
 )
 
 # Link libraries
 target_link_libraries(fdfile_tests PRIVATE
-    fdfile::fdfile
+    fdfile
     GTest::gtest_main
 )
 

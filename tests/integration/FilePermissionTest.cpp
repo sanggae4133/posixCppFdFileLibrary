@@ -20,7 +20,7 @@
 #include <unistd.h>
 
 #include "records/FixedA.hpp"
-#include "repository/UniformFixedRepositoryImpl.hpp"
+#include <fdfile/repository/UniformFixedRepositoryImpl.hpp>
 
 using namespace FdFile;
 
