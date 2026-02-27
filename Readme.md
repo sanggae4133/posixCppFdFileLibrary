@@ -14,7 +14,7 @@ A high-performance C++17 file repository library using POSIX APIs (`open`, `read
 | **External Modification Detection** | Auto-reload when external process modifies file |
 | **File Locking** | `fcntl` based shared/exclusive locks for concurrency |
 | **Upsert Semantics** | `save()` automatically inserts or updates |
-| **149 Unit Tests** | Comprehensive GoogleTest coverage |
+| **155 Unit Tests** | Comprehensive GoogleTest coverage |
 
 ---
 
@@ -22,7 +22,9 @@ A high-performance C++17 file repository library using POSIX APIs (`open`, `read
 
 ```
 posixCppFdFileLibrary/
-├── CMakeLists.txt              # Root CMake (includes GoogleTest v1.14)
+├── CMakeLists.txt              # Root CMake (options/tests/install/package export)
+├── cmake/
+│   └── FdFileLibConfig.cmake.in # Package config template
 ├── compile.sh                  # Build script
 ├── run.sh                      # Run example
 │
@@ -48,7 +50,7 @@ posixCppFdFileLibrary/
 │       ├── FixedA.hpp, FixedB.hpp  # Fixed record examples
 │       └── A.hpp, B.hpp            # Variable record examples
 │
-└── tests/                      # GoogleTest Unit Tests (149 tests)
+└── tests/                      # GoogleTest Unit Tests (155 tests)
     ├── CMakeLists.txt
     ├── unit/                   # 단위 테스트 (개별 클래스)
     │   ├── UniqueFdTest.cpp        # 9 tests
@@ -81,23 +83,67 @@ posixCppFdFileLibrary/
 git clone <repo-url>
 cd posixCppFdFileLibrary
 
-mkdir build && cd build
-cmake ..
-cmake --build . -j
+cmake -S . -B build
+cmake --build build -j
 
 # Or use the script
 ./compile.sh
 ```
 
+### CMake Options
+
+| Option | Default (Standalone) | Default (Subdirectory) | Description |
+|--------|-----------------------|-------------------------|-------------|
+| `FDFILE_BUILD_EXAMPLES` | `ON` | `OFF` | Build example executable (`fdfile_example`) |
+| `FDFILE_BUILD_TESTS` | `ON` | `OFF` | Build GoogleTest suite (`fdfile_tests`) |
+| `FDFILE_RUN_TESTS` | `OFF` | `OFF` | Run tests automatically after build |
+| `FDFILE_INSTALL` | `ON` | `ON` | Generate `install`/package export targets |
+
+```bash
+# Example: library-only build
+cmake -S . -B build -DFDFILE_BUILD_EXAMPLES=OFF -DFDFILE_BUILD_TESTS=OFF
+cmake --build build -j
+```
+
 ### Run Tests
 
 ```bash
-cd build && ctest --output-on-failure
+ctest --test-dir build --output-on-failure
 
 # Run specific suite
-./fdfile_tests --gtest_filter="Concurrency*"
-./fdfile_tests --gtest_filter="unit/*"
-./fdfile_tests --gtest_filter="scenario/*"
+./build/tests/fdfile_tests --gtest_filter="Concurrency*"
+./build/tests/fdfile_tests --gtest_filter="FieldMeta*"
+```
+
+### Install And Consume (`find_package`)
+
+```bash
+# Install to a custom prefix
+cmake --install build --prefix /tmp/fdfilelib-install
+```
+
+```cmake
+# Consumer project CMakeLists.txt
+cmake_minimum_required(VERSION 3.16)
+project(MyApp LANGUAGES CXX)
+
+find_package(FdFileLib REQUIRED)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE fdfile::fdfile)
+```
+
+```bash
+# Configure consumer with installed package path
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/tmp/fdfilelib-install
+cmake --build build
+```
+
+### Use As Subdirectory
+
+```cmake
+add_subdirectory(external/posixCppFdFileLibrary)
+target_link_libraries(my_app PRIVATE fdfile::fdfile)
 ```
 
 ---
@@ -296,12 +342,12 @@ repo.deleteById("001", ec);                // 삭제
 
 ### Test Categories (테스트 분류)
 
-| Category | Directory | Tests | Description |
-|----------|-----------|-------|-------------|
-| **Unit** | `tests/unit/` | 62 | 개별 클래스/함수 |
-| **Scenario** | `tests/scenario/` | 16 | 기능 흐름 |
-| **Integration** | `tests/integration/` | 9 | 동시성, 권한, 손상 |
-| **Corruption** | `tests/*.cpp` | 62 | 파일 손상 시나리오 |
+| Category | Directory | Description |
+|----------|-----------|-------------|
+| **Unit** | `tests/unit/` | 개별 클래스/함수 |
+| **Scenario** | `tests/scenario/` | 기능 흐름 |
+| **Integration** | `tests/integration/` | 동시성, 권한, 손상 |
+| **Corruption** | `tests/*.cpp` | 파일 손상 시나리오 |
 
 ### Unit Tests
 
@@ -323,7 +369,7 @@ cd build && ctest --output-on-failure
 ./tests/fdfile_tests --gtest_filter="FieldMeta*"
 ./tests/fdfile_tests --gtest_filter="*Corruption*"
 
-# 결과: 100% tests passed, 0 tests failed out of 149
+# 결과: 100% tests passed, 0 tests failed out of 155
 ```
 
 ---
