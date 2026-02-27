@@ -42,7 +42,8 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
     UniformFixedRepositoryImpl(const std::string& path, std::error_code& ec) : path_(path) {
         ec.clear();
 
-        // 1. 레코드 사이즈 계산
+        // 1) 레코드 정적 크기 산출
+        // 템플릿 타입 T의 레이아웃 정의 결과를 기준으로 저장소 slot 크기를 고정한다.
         T temp;
         recordSize_ = temp.recordSize();
         if (recordSize_ == 0) {
@@ -50,7 +51,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             return;
         }
 
-        // 2. 파일 열기
+        // 2) 파일 열기
         int flags = O_CREAT | O_RDWR;
 #ifdef O_CLOEXEC
         flags |= O_CLOEXEC;
@@ -61,7 +62,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             return;
         }
 
-        // 3. 파일 크기 및 mtime 초기화
+        // 3) 파일 무결성(크기 정합성) 검사 및 stat 스냅샷 초기화
         struct stat st{};
         if (::fstat(fd_.get(), &st) < 0) {
             ec = std::error_code(errno, std::generic_category());
@@ -76,6 +77,8 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
         lastSize_ = st.st_size;
 
         if (st.st_size > 0) {
+            // 기존 데이터가 있으면 매핑 + 캐시 리빌드를 즉시 수행해
+            // 생성 직후 조회에서도 O(1) id lookup이 가능하도록 준비한다.
             if (!remapFile(ec))
                 return;
             rebuildCache(ec);
@@ -97,6 +100,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
     // =========================================================================
 
     bool save(const T& record, std::error_code& ec) override {
+        // write 경로는 배타 잠금으로 직렬화한다.
         detail::FileLockGuard lock(fd_.get(), detail::FileLockGuard::Mode::Exclusive, ec);
         if (ec)
             return false;
@@ -113,14 +117,14 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
         auto idxOpt = findIdxByIdCached(record.getId());
 
         if (idxOpt) {
-            // Update
+            // Update: 기존 slot 위치에 in-place 직렬화
             if (!remapFile(ec))
                 return false;
             char* dst = static_cast<char*>(mmap_.data()) + (*idxOpt * recordSize_);
             record.serialize(dst);
             return mmap_.sync();
         } else {
-            // Insert
+            // Insert: 파일 확장 -> 재매핑 -> 새 slot에 직렬화
             struct stat st{};
             ::fstat(fd_.get(), &st);
             size_t newSize = st.st_size + recordSize_;
@@ -134,7 +138,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             char* dst = static_cast<char*>(mmap_.data()) + st.st_size;
             record.serialize(dst);
 
-            // 캐시 업데이트
+            // append된 인덱스를 즉시 캐시에 반영해 다음 조회 비용을 줄인다.
             size_t newIdx = st.st_size / recordSize_;
             idCache_[record.getId()] = newIdx;
             updateFileStats();
@@ -144,6 +148,8 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
     }
 
     bool saveAll(const std::vector<const T*>& records, std::error_code& ec) override {
+        // save를 재사용하는 단순 구현.
+        // 중간 실패 시 앞선 성공분은 롤백되지 않는다.
         for (const auto* r : records) {
             if (!save(*r, ec))
                 return false;
@@ -152,6 +158,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
     }
 
     std::vector<std::unique_ptr<T>> findAll(std::error_code& ec) override {
+        // read 경로는 shared lock으로 다중 reader를 허용한다.
         detail::FileLockGuard lock(fd_.get(), detail::FileLockGuard::Mode::Shared, ec);
         if (ec)
             return {};
@@ -173,7 +180,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             if (rec->deserialize(buf, ec)) {
                 res.push_back(std::move(rec));
             } else {
-                // Deserialize 실패 - 외부에서 corrupt한 경우
+                // Deserialize 실패는 외부 손상 가능성을 의미하므로 즉시 종료한다.
                 return res;
             }
         }
@@ -190,7 +197,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
         if (!checkAndRefreshCache(ec))
             return nullptr;
 
-        // O(1) 캐시 조회
+        // O(1) 캐시 조회로 slot 인덱스를 바로 찾는다.
         auto idxOpt = findIdxByIdCached(id);
         if (!idxOpt) {
             return nullptr;
@@ -224,7 +231,8 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
         size_t idx = *idxOpt;
         size_t cnt = slotCount();
 
-        // Simple Shift (O(N) data move)
+        // 삭제 대상 뒤쪽 데이터를 한 칸씩 앞으로 당겨 빈 구멍을 메운다.
+        // 복잡한 free-list 구조 대신 단순 shift 전략을 사용한다.
         char* base = static_cast<char*>(mmap_.data());
         char* dst = base + idx * recordSize_;
         char* src = dst + recordSize_;
@@ -240,7 +248,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             return false;
         }
 
-        // Delete 시 인덱스가 shift되므로 캐시 전체 리빌드
+        // delete 이후 모든 인덱스가 바뀔 수 있으므로 캐시를 전체 재구축한다.
         rebuildCache(ec);
         return true;
     }
@@ -256,7 +264,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             return false;
         }
 
-        // 캐시 초기화
+        // 파일과 캐시를 동시에 비워 논리/물리 상태를 일치시킨다.
         idCache_.clear();
         updateFileStats();
         return true;
@@ -295,7 +303,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             return false;
         }
 
-        // 외부 수정 감지
+        // 외부 수정 감지: mtime 또는 size가 바뀌면 재매핑 + 캐시 재구축을 수행한다.
         if (st.st_mtime != lastMtime_ || static_cast<size_t>(st.st_size) != lastSize_) {
             // 파일 크기가 레코드 사이즈로 나누어 떨어지지 않으면 corrupt
             if (st.st_size > 0 && (static_cast<size_t>(st.st_size) % recordSize_) != 0) {
@@ -328,7 +336,8 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             if (temp.deserialize(buf, ec)) {
                 idCache_[temp.getId()] = i;
             } else {
-                // Deserialize 실패 시 에러 반환
+                // 일부라도 깨진 slot이 있으면 캐시 전체를 버린다.
+                // 부분 캐시를 유지하면 존재하지 않는 id 조회 결과가 왜곡될 수 있다.
                 idCache_.clear();
                 return;
             }
@@ -348,6 +357,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
     /// @brief 파일 mtime/size 업데이트
     void updateFileStats() {
         struct stat st{};
+        // fstat 실패 시 기존 값을 유지해 잘못된 timestamp로 덮어쓰지 않는다.
         if (::fstat(fd_.get(), &st) == 0) {
             lastMtime_ = st.st_mtime;
             lastSize_ = st.st_size;
@@ -362,9 +372,11 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
             return false;
         }
         if (st.st_size == 0) {
+            // 빈 파일은 매핑을 해제한 null 상태로 표현한다.
             mmap_.reset();
             return true;
         }
+        // MAP_SHARED 매핑으로 write가 파일에 반영되도록 한다.
         void* ptr = ::mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd_.get(), 0);
         if (ptr == MAP_FAILED) {
             ec = std::error_code(errno, std::generic_category());
@@ -375,6 +387,7 @@ template <typename T> class UniformFixedRepositoryImpl : public RecordRepository
     }
 
     size_t slotCount() const {
+        // recordSize_로 나눈 몫이 곧 레코드 개수다(생성자/refresh에서 정합성 검증 전제).
         if (!mmap_)
             return 0;
         return mmap_.size() / recordSize_;

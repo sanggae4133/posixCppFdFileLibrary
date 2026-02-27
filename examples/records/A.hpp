@@ -17,12 +17,13 @@
 
 class A : public FdFile::VariableRecordBase {
   public:
-    std::string name;
-    long userId = 0;
+    std::string name; ///< 사용자 이름
+    long userId = 0; ///< 레코드 ID로도 사용되는 사용자 번호
 
     A() = default;
     A(std::string name, long id) : name(std::move(name)), userId(id) {}
 
+    // 저장소 키로 사용할 ID를 문자열 형태로 반환한다.
     std::string id() const override { return std::to_string(userId); }
     const char* typeName() const override { return "A"; }
 
@@ -32,6 +33,8 @@ class A : public FdFile::VariableRecordBase {
 
     void
     toKv(std::vector<std::pair<std::string, std::pair<bool, std::string>>>& out) const override {
+        // formatLine과 짝이 맞는 key 순서로 직렬화한다.
+        // 값 타입 정보(isString)를 명시해 파서가 숫자/문자열을 구분할 수 있게 한다.
         out.clear();
         out.push_back({"name", {true, name}});
         out.push_back({"id", {false, std::to_string(userId)}});
@@ -40,6 +43,7 @@ class A : public FdFile::VariableRecordBase {
     bool fromKv(const std::unordered_map<std::string, std::pair<bool, std::string>>& kv,
                 std::error_code& ec) override {
         ec.clear();
+        // 필수 키 누락은 구조적 포맷 오류이므로 즉시 실패한다.
         auto n = kv.find("name");
         auto i = kv.find("id");
         if (n == kv.end() || i == kv.end())
@@ -47,6 +51,7 @@ class A : public FdFile::VariableRecordBase {
 
         name = n->second.second;
         long tmp = 0;
+        // 숫자 파싱은 strict 모드를 사용해 "123abc" 같은 입력을 허용하지 않는다.
         if (!FdFile::util::parseLongStrict(i->second.second, tmp, ec))
             return false;
         userId = tmp;

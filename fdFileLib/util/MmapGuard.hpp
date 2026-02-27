@@ -27,6 +27,8 @@ class MmapGuard {
 
     MmapGuard(void* ptr, size_t size) : ptr_(ptr), size_(size) {
         if (ptr_ == MAP_FAILED) {
+            // 호출자가 MAP_FAILED를 넘겼을 때도 객체를 "유효하지 않은 빈 상태"로 정규화한다.
+            // 이후 valid()/bool 연산에서 일관된 결과를 제공하도록 nullptr로 통일한다.
             ptr_ = nullptr;
             size_ = 0;
         }
@@ -46,6 +48,8 @@ class MmapGuard {
 
     MmapGuard& operator=(MmapGuard&& other) noexcept {
         if (this != &other) {
+            // 기존 매핑을 먼저 해제한 뒤 새 매핑 소유권을 가져온다.
+            // move assignment 과정에서 매핑 누수를 막기 위한 핵심 순서다.
             reset();
             ptr_ = other.ptr_;
             size_ = other.size_;
@@ -64,6 +68,8 @@ class MmapGuard {
 
     void reset() noexcept {
         if (ptr_) {
+            // munmap은 커널 자원을 반환하는 핵심 호출이므로,
+            // reset을 여러 번 호출해도 안전하도록 null-check 후 정리한다.
             ::munmap(ptr_, size_);
             ptr_ = nullptr;
             size_ = 0;
@@ -83,6 +89,8 @@ class MmapGuard {
     bool sync(bool async = false) noexcept {
         if (!ptr_)
             return false;
+        // MS_SYNC: 호출 시점까지 동기화 완료를 보장
+        // MS_ASYNC: 커널 스케줄에 위임 (지연 허용, 처리량 우선)
         int flags = async ? MS_ASYNC : MS_SYNC;
         return ::msync(ptr_, size_, flags) == 0;
     }

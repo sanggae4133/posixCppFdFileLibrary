@@ -78,6 +78,8 @@ class FileLockGuard {
     /// @note 기존 잠금이 있으면 먼저 해제한다
     bool lock(int fd, Mode mode, std::error_code& ec) {
         ec.clear();
+        // 동일 객체에서 잠금 대상을 바꾸는 경우를 허용하기 위해 기존 잠금부터 정리한다.
+        // 잠금 중첩 상태를 남기지 않도록 RAII 객체의 상태를 항상 단일 잠금으로 유지한다.
         unlockIgnore();
         fd_ = fd;
 
@@ -86,6 +88,8 @@ class FileLockGuard {
             return false;
         }
 
+        // l_len=0은 "현재 위치부터 EOF까지"가 아니라 "파일 전체" 잠금을 의미한다.
+        // 즉 레코드 단위 잠금이 아니라 저장소 파일 전체에 대한 상호배제를 건다.
         struct flock fl{};
         fl.l_type = (mode == Mode::Shared) ? F_RDLCK : F_WRLCK;
         fl.l_whence = SEEK_SET;
@@ -106,6 +110,8 @@ class FileLockGuard {
     void unlockIgnore() noexcept {
         if (!locked_ || fd_ < 0)
             return;
+        // 소멸자에서도 호출되므로 unlock 실패를 상위로 전파하지 않는다.
+        // 실패하더라도 객체 내부 상태는 "잠금 없음"으로 정리해 이중 해제를 방지한다.
         struct flock fl{};
         fl.l_type = F_UNLCK;
         fl.l_whence = SEEK_SET;

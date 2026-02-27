@@ -45,6 +45,8 @@ class UniqueFd {
     /// @brief 이동 대입 연산자
     UniqueFd& operator=(UniqueFd&& other) noexcept {
         if (this != &other) {
+            // 이미 들고 있던 fd를 먼저 정리한 뒤 새 소유권을 넘겨받는다.
+            // 이 순서를 지켜야 self-leak 없이 move semantics를 안전하게 보장할 수 있다.
             reset();
             fd_ = other.fd_;
             other.fd_ = -1;
@@ -74,6 +76,9 @@ class UniqueFd {
     /// @brief 기존 fd를 닫고 새 fd로 교체
     /// @param newFd 새 파일 디스크립터 (기본값: -1)
     void reset(int newFd = -1) noexcept {
+        // close 실패를 호출자에게 노출하지 않는 이유:
+        // - 소멸자 경로에서 예외/에러 전파를 피해야 하기 때문
+        // - 리소스 회수 우선 정책으로 "최대한 정리"를 수행하기 때문
         if (fd_ >= 0)
             ::close(fd_);
         fd_ = newFd;

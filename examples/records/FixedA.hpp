@@ -25,10 +25,12 @@ class FixedA : public FdFile::FixedRecordBase<FixedA> {
 
   private:
     /// @brief 필드 메타데이터 튜플
+    /// @details 선언 순서가 파일 저장 순서와 1:1로 대응된다.
     auto fields() const { return std::make_tuple(FD_STR(name), FD_NUM(age)); }
 
     /// @brief 멤버 초기화
     void initMembers() {
+        // 고정 길이 문자열은 남는 영역을 0으로 채워야 이전 값 찌꺼기가 남지 않는다.
         std::memset(name, 0, sizeof(name));
         age = 0;
     }
@@ -39,11 +41,13 @@ class FixedA : public FdFile::FixedRecordBase<FixedA> {
   public:
     /// @brief 커스텀 생성자
     FixedA(const char* n, int64_t a, const char* idStr) {
+        // 기본 상태를 먼저 만든 뒤 입력값을 덮어써 일관된 초기화 순서를 유지한다.
         initMembers();
         if (n)
             std::strncpy(name, n, sizeof(name));
         age = a;
         setId(idStr);
+        // ID/필드 길이를 포함한 레이아웃 계산을 생성자 말미에 수행한다.
         defineLayout();
     }
 };

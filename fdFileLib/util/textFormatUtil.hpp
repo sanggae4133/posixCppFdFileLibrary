@@ -19,7 +19,10 @@
 
 namespace FdFile::util {
 
-// strict long parse with range check
+// 숫자 문자열을 long으로 엄격하게 변환한다.
+// - 문자열 전체를 소비하지 못하면 실패로 간주한다.
+// - 내부 파싱은 stoll(long long)로 수행한 뒤 long 범위 검증을 추가로 수행한다.
+// - 호출자는 ec를 통해 실패 원인(invalid_argument / result_out_of_range)을 분기할 수 있다.
 inline bool parseLongStrict(const std::string& s, long& out, std::error_code& ec) {
     ec.clear();
     try {
@@ -42,11 +45,15 @@ inline bool parseLongStrict(const std::string& s, long& out, std::error_code& ec
 }
 
 inline void skipWs(const char*& p, const char* end) {
+    // 파서 전반에서 공통으로 사용하는 공백 스킵 루틴.
+    // 입력 포인터를 직접 전진시키기 때문에 호출 순서가 곧 파싱 상태 전이가 된다.
     while (p < end && std::isspace((unsigned char)*p))
         ++p;
 }
 
 inline bool parseIdent(const char*& p, const char* end, std::string& out) {
+    // type token은 C identifier 규칙(첫 글자 alpha/_ + 이후 alnum/_)을 따른다.
+    // 파일 포맷의 진입점이므로 실패 시 상위 parseLine은 즉시 invalid_argument를 반환한다.
     skipWs(p, end);
     if (p >= end || !(std::isalpha((unsigned char)*p) || *p == '_'))
         return false;
@@ -58,6 +65,8 @@ inline bool parseIdent(const char*& p, const char* end, std::string& out) {
 }
 
 inline bool parseQuotedString(const char*& p, const char* end, std::string& out) {
+    // 문자열 토큰은 큰따옴표로 감싸진 형식만 허용한다.
+    // 허용 escape는 \" , \\ , \n , \t 로 제한하여 포맷 단순성과 예측 가능성을 유지한다.
     skipWs(p, end);
     if (p >= end || *p != '"')
         return false;
@@ -90,6 +99,8 @@ inline bool parseQuotedString(const char*& p, const char* end, std::string& out)
 }
 
 inline bool parseIntToken(const char*& p, const char* end, std::string& out) {
+    // 정수 토큰은 optional sign(+/-) + 최소 1개 이상의 숫자를 요구한다.
+    // 숫자 유효성(범위 포함)은 상위 계층에서 parseLongStrict로 최종 검증한다.
     skipWs(p, end);
     const char* s = p;
     if (p < end && (*p == '-' || *p == '+'))
@@ -104,6 +115,8 @@ inline bool parseIntToken(const char*& p, const char* end, std::string& out) {
 }
 
 inline std::string escapeString(const std::string& in) {
+    // 직렬화 시 파서가 혼동할 수 있는 문자(" , \ , 개행, 탭)를 escape하여
+    // parseLine <-> formatLine 간 round-trip 안정성을 보장한다.
     std::string o;
     o.reserve(in.size() + 4);
     for (char c : in) {
@@ -121,6 +134,9 @@ inline std::string escapeString(const std::string& in) {
 }
 
 // 한 줄(개행 제외) 파싱: Type { "k": "v", "id": 123 }
+// - 성공 시 type / kv를 채우고 true를 반환한다.
+// - 포맷 불일치가 하나라도 있으면 즉시 false + ec=invalid_argument로 종료한다.
+// - 본 함수는 저장소 로딩 경로에서 반복 호출되므로 "부분 성공"보다 "빠른 실패"를 우선한다.
 inline bool parseLine(const std::string& line, std::string& type,
                       std::unordered_map<std::string, std::pair<bool, std::string>>& kv,
                       std::error_code& ec) {
@@ -154,6 +170,8 @@ inline bool parseLine(const std::string& line, std::string& type,
     }
 
     while (true) {
+        // key-value 항목을 하나씩 읽고, 구분자(',' 또는 '}')를 기준으로 다음 상태로 이동한다.
+        // 이 루프는 상태 머신 역할을 하며, 어느 단계에서든 형식이 어긋나면 즉시 실패한다.
         std::string key;
         if (!parseQuotedString(p, end, key)) {
             ec = std::make_error_code(std::errc::invalid_argument);
@@ -185,7 +203,9 @@ inline bool parseLine(const std::string& line, std::string& type,
             }
         }
 
-        // ✅ duplicate key는 포맷 오류로 처리 (기존에는 emplace로 silently drop 되었음)
+        // duplicate key는 포맷 오류로 처리한다.
+        // 동일 key 중복 허용 시 마지막 값 우선/첫 값 우선 정책이 필요해지므로,
+        // 구현 단순성과 예측 가능성을 위해 입력 자체를 invalid로 본다.
         if (kv.find(key) != kv.end()) {
             ec = std::make_error_code(std::errc::invalid_argument);
             return false;
@@ -223,6 +243,8 @@ inline std::string
 formatLine(const char* type,
            const std::vector<std::pair<std::string, std::pair<bool, std::string>>>& fields) {
 
+    // parseLine이 기대하는 형식과 정확히 짝이 맞는 출력 문자열을 생성한다.
+    // 줄 끝 개행('\n')은 저장소 파일에서 레코드 경계를 식별하는 핵심 규약이다.
     std::string out;
     out += type;
     out += " { ";
@@ -245,7 +267,7 @@ formatLine(const char* type,
         if (i + 1 < fields.size())
             out += ", ";
     }
-    out += " }\n"; // Add newline for proper line-by-line parsing
+    out += " }\n";
     return out;
 }
 

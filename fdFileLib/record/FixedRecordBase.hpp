@@ -67,21 +67,23 @@ template <typename Derived> class FixedRecordBase {
         if (!layoutDefined_)
             return false;
 
-        // 1. 템플릿 복사
+        // 1) 미리 계산된 템플릿을 먼저 복사해 구분자/고정 문자열 골격을 한 번에 채운다.
+        // 이후 단계에서 type/id/field 영역만 덮어써 불필요한 문자열 조립 비용을 줄인다.
         std::memcpy(buf, formatTemplate_.data(), totalSize_);
 
-        // 2. Type 덮어쓰기 (Derived::typeName() 호출)
+        // 2) Type 영역 덮어쓰기
         const char* tName = static_cast<const Derived*>(this)->typeName();
         std::string tNameStr(tName);
         size_t copyLen = std::min(tNameStr.size(), typeLen_);
         std::memcpy(buf + typeOffset_, tNameStr.data(), copyLen);
 
-        // 3. ID 덮어쓰기 (Derived::getId() 호출)
+        // 3) ID 영역 덮어쓰기
         std::string idStr = static_cast<const Derived*>(this)->getId();
         copyLen = std::min(idStr.size(), idLen_);
         std::memcpy(buf + idOffset_, idStr.data(), copyLen);
 
-        // 4. 필드 데이터 덮어쓰기
+        // 4) 사용자 필드 영역 덮어쓰기
+        // valBuf 고정 크기(1024)는 현재 설계에서 필드 최대 길이 guard 역할을 한다.
         for (size_t i = 0; i < fields_.size(); ++i) {
             const auto& f = fields_[i];
             char valBuf[1024];
@@ -111,7 +113,8 @@ template <typename Derived> class FixedRecordBase {
 
         char tmpBuf[1024];
 
-        // 1. ID 읽기
+        // 1) ID 복원
+        // ID는 문자열 필드이므로 임시 버퍼를 0으로 지운 뒤 복사해 null-termination을 보장한다.
         if (idLen_ >= 1024)
             return false;
         std::memset(tmpBuf, 0, sizeof(tmpBuf));
@@ -119,7 +122,8 @@ template <typename Derived> class FixedRecordBase {
         // Derived::setId 호출
         static_cast<Derived*>(this)->setId(std::string(tmpBuf));
 
-        // 2. 필드 읽기
+        // 2) 사용자 필드 복원
+        // 필드 변환 실패(예: 숫자 포맷 오류)는 Derived::__setFieldValue 내부에서 처리된다.
         for (size_t i = 0; i < fields_.size(); ++i) {
             const auto& f = fields_[i];
             if (f.length >= 1024)
@@ -146,6 +150,8 @@ template <typename Derived> class FixedRecordBase {
     /// @brief 레이아웃 정의 시작
     /// @details 기존 레이아웃 정보를 초기화합니다.
     void defineStart() {
+        // 재정의를 허용하기 위해 누적 상태를 전부 초기화한다.
+        // defineLayout 재호출 시 이전 레이아웃 정보가 남으면 포맷이 오염된다.
         fields_.clear();
         layoutDefined_ = false;
         formatTemplate_.clear();
@@ -155,6 +161,7 @@ template <typename Derived> class FixedRecordBase {
     /// @brief 타입 필드 정의
     /// @param len 타입 필드의 길이
     void defineType(size_t len) {
+        // type 필드는 레코드 시작 오프셋(0)에 배치된다.
         typeOffset_ = totalSize_;
         typeLen_ = len;
         totalSize_ += len;
@@ -165,6 +172,7 @@ template <typename Derived> class FixedRecordBase {
     /// @details ID 필드 앞뒤로 JSON 스타일의 구분자(",id:\"", "\"{")를 템플릿에 추가합니다.
     /// @param len ID 필드의 길이
     void defineId(size_t len) {
+        // prefix/suffix는 포맷 문법의 일부이므로 길이 계산(totalSize_)에 반드시 포함되어야 한다.
         std::string prefix = ",id:\"";
         totalSize_ += prefix.size();
         formatTemplate_ += prefix;
@@ -183,6 +191,7 @@ template <typename Derived> class FixedRecordBase {
     /// @param valLen 필드 값의 길이
     /// @param isString 문자열 여부 (true일 경우 값 앞뒤에 따옴표 추가)
     void defineField(const char* key, size_t valLen, bool isString) {
+        // 두 번째 필드부터는 ',' 구분자를 삽입한다.
         if (!fields_.empty()) {
             totalSize_ += 1;
             formatTemplate_ += ",";
@@ -202,6 +211,7 @@ template <typename Derived> class FixedRecordBase {
         info.isString = isString;
         fields_.push_back(info);
 
+        // 실제 값 영역은 NUL 바이트로 미리 예약해 두고 serialize 단계에서 덮어쓴다.
         totalSize_ += valLen;
         formatTemplate_.append(valLen, '\0');
 

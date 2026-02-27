@@ -27,11 +27,11 @@ class RecordBase {
     virtual ~RecordBase() = default;
 
     /// @brief 레코드 고유 식별자 반환
-    /// @return 레코드의 ID 문자열. 모든 레코드는 고유한 ID를 가져야 합니다.
+    /// @return 레코드의 ID 문자열. 저장소 구현은 이 값을 upsert/삭제/조회의 기준 키로 사용합니다.
     virtual std::string id() const = 0;
 
     /// @brief 레코드 타입 이름 반환
-    /// @return 레코드의 타입 이름 (C-style string). 파일 저장 시 메타데이터로 사용될 수 있습니다.
+    /// @return 레코드의 타입 이름 (C-style string). 가변 길이 저장소에서는 prototype 매칭 키로 사용됩니다.
     virtual const char* typeName() const = 0;
 };
 

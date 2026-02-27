@@ -17,14 +17,15 @@
 
 class B : public FdFile::VariableRecordBase {
   public:
-    std::string name;
-    long userId = 0;
-    std::string pw;
+    std::string name; ///< 계정 이름
+    long userId = 0; ///< 레코드 ID로 사용하는 사용자 번호
+    std::string pw; ///< 비밀번호(예제 목적, 실제 서비스에서는 해시/암호화 필요)
 
     B() = default;
     B(std::string name, long id, std::string pw)
         : name(std::move(name)), userId(id), pw(std::move(pw)) {}
 
+    // repository key 규약에 맞춰 userId를 문자열 ID로 반환한다.
     std::string id() const override { return std::to_string(userId); }
     const char* typeName() const override { return "B"; }
 
@@ -34,6 +35,7 @@ class B : public FdFile::VariableRecordBase {
 
     void
     toKv(std::vector<std::pair<std::string, std::pair<bool, std::string>>>& out) const override {
+        // B 타입은 name/id/pw 3개 필드를 파일 포맷으로 직렬화한다.
         out.clear();
         out.push_back({"name", {true, name}});
         out.push_back({"id", {false, std::to_string(userId)}});
@@ -46,12 +48,14 @@ class B : public FdFile::VariableRecordBase {
         auto n = kv.find("name");
         auto i = kv.find("id");
         auto p = kv.find("pw");
+        // 세 필드 중 하나라도 누락되면 불완전 레코드로 간주한다.
         if (n == kv.end() || i == kv.end() || p == kv.end())
             return false;
 
         name = n->second.second;
         pw = p->second.second;
         long tmp = 0;
+        // 숫자 ID는 strict parsing으로 검증해 손상 데이터 유입을 차단한다.
         if (!FdFile::util::parseLongStrict(i->second.second, tmp, ec))
             return false;
         userId = tmp;

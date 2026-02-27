@@ -38,13 +38,15 @@ template <size_t Len, bool IsStr> struct FieldMeta {
 
     void get(char* buf) const {
         if constexpr (IsStr) {
+            // 고정 길이 문자열 필드는 원본 바이트를 그대로 복사한다.
+            // padding/zero-fill 정책은 상위 레코드 초기화 로직에서 책임진다.
             std::memcpy(buf, ptr, Len);
         } else {
             int64_t val = *static_cast<int64_t*>(ptr);
-            // Format: +0000000000000000025 or -0000000000000000025 (sign + 19 digits = 20 chars)
+            // 숫자 필드는 부호 + 19자리 zero-padding 고정 포맷으로 직렬화한다.
+            // 예) +0000000000000000025, -0000000000000000025
             char sign = (val >= 0) ? '+' : '-';
-            // Use unsigned to avoid overflow when val == INT64_MIN (-9223372036854775808)
-            // -INT64_MIN would overflow, but casting to unsigned first avoids this
+            // INT64_MIN 절대값 처리 시 overflow를 피하기 위해 unsigned 경유 계산을 사용한다.
             uint64_t absVal =
                 (val >= 0) ? static_cast<uint64_t>(val) : static_cast<uint64_t>(-(val + 1)) + 1;
             std::snprintf(buf, Len + 1, "%c%019llu", sign, static_cast<unsigned long long>(absVal));
@@ -55,19 +57,19 @@ template <size_t Len, bool IsStr> struct FieldMeta {
     /// @throws std::runtime_error 유효하지 않은 부호 문자인 경우
     void set(const char* buf) {
         if constexpr (IsStr) {
+            // 역직렬화 시 기존 버퍼를 먼저 0으로 지워 trailing garbage를 제거한다.
             std::memset(ptr, 0, Len);
             std::memcpy(ptr, buf, Len);
         } else {
-            // Validate sign character
+            // 숫자 필드는 첫 글자 부호 검증을 강제해 손상된 레코드를 조기에 차단한다.
             char sign = buf[0];
             if (sign != '+' && sign != '-') {
                 throw std::runtime_error("Invalid numeric field: sign must be '+' or '-'");
             }
-            // Parse the numeric part as unsigned (to handle INT64_MIN's absolute value)
+            // 절대값 파트는 unsigned로 파싱하여 INT64_MIN 경계값을 안전하게 다룬다.
             uint64_t absVal = std::stoull(buf + 1);
             if (sign == '-') {
-                // Handle INT64_MIN specially: -(uint64_t)9223372036854775808
-                // can't be done directly, so we cast through unsigned
+                // 음수 복원 시에도 overflow 없는 경로를 유지한다.
                 *static_cast<int64_t*>(ptr) = -static_cast<int64_t>(absVal);
             } else {
                 *static_cast<int64_t*>(ptr) = static_cast<int64_t>(absVal);
@@ -102,17 +104,22 @@ auto makeNumField(const char* name, T& member) {
 
 template <typename Base, typename Tuple>
 void defineFieldsFromTuple(Base* base, const Tuple& fields) {
+    // tuple에 선언된 필드를 순회하며 레이아웃 엔진(FixedRecordBase)에 필드 정의를 등록한다.
+    // fold expression을 사용해 런타임 반복문 없이 컴파일타임에 호출 시퀀스를 생성한다.
     std::apply([base](const auto&... f) { (base->defineField(f.name, f.length, f.isString), ...); },
                fields);
 }
 
 template <typename Tuple> void getFieldByIndex(const Tuple& fields, size_t idx, char* buf) {
+    // 인덱스 기반 접근을 유지해 serialize 루프에서 조건 분기 비용을 최소화한다.
     size_t i = 0;
     std::apply([&](const auto&... f) { ((i++ == idx ? (f.get(buf), void()) : void()), ...); },
                fields);
 }
 
 template <typename Tuple> void setFieldByIndex(const Tuple& fields, size_t idx, const char* buf) {
+    // tuple 요소가 const로 전달되더라도 set 호출이 가능하도록 const_cast를 사용한다.
+    // 이 경로는 내부 구현 전용이며, 외부 API로는 노출되지 않는다.
     size_t i = 0;
     std::apply(
         [&](const auto&... f) {
@@ -147,6 +154,7 @@ template <typename Tuple> void setFieldByIndex(const Tuple& fields, size_t idx, 
 #define FD_RECORD_IMPL(ClassName, TypeNameStr, TypeLen, IdLen)                                     \
   public:                                                                                          \
     ClassName() {                                                                                  \
+        /* 생성 즉시 멤버 초기화 + 레이아웃 정의를 완료해 serialize/deserialize를 즉시 가능 상태로 만든다. */ \
         this->initMembers();                                                                       \
         this->defineLayout();                                                                      \
     }                                                                                              \
@@ -169,6 +177,7 @@ template <typename Tuple> void setFieldByIndex(const Tuple& fields, size_t idx, 
   private:                                                                                         \
     std::string id_;                                                                               \
     void defineLayout() {                                                                          \
+        /* 레이아웃 정의 순서(타입 -> id -> 사용자 필드)는 파일 포맷 호환성의 핵심 계약이다. */             \
         this->defineStart();                                                                       \
         this->defineType(TypeLen);                                                                 \
         this->defineId(IdLen);                                                                     \

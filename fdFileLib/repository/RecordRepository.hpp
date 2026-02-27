@@ -52,6 +52,9 @@ template <typename T> class RecordRepository {
         if (ec)
             return result;
 
+        // dynamic_cast 성공 객체만 소유권을 SubT 컨테이너로 이전한다.
+        // release()를 호출하지 않으면 rec 소멸 시 이중 해제가 발생할 수 있으므로
+        // cast 성공 분기에서 소유권 이전 순서를 반드시 유지해야 한다.
         for (auto& rec : all) {
             if (auto* casted = dynamic_cast<SubT*>(rec.get())) {
                 (void)rec.release();
@@ -68,6 +71,7 @@ template <typename T> class RecordRepository {
         if (!found)
             return nullptr;
 
+        // 단건 조회에서도 동일하게 cast 성공 시 ownership을 SubT 포인터로 이동한다.
         if (auto* casted = dynamic_cast<SubT*>(found.get())) {
             (void)found.release();
             return std::unique_ptr<SubT>(casted);

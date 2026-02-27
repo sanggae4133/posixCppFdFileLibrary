@@ -25,10 +25,12 @@ class FixedB : public FdFile::FixedRecordBase<FixedB> {
 
   private:
     /// @brief 필드 메타데이터 튜플
+    /// @details title -> cost 순서가 직렬화 바이트 레이아웃 순서가 된다.
     auto fields() const { return std::make_tuple(FD_STR(title), FD_NUM(cost)); }
 
     /// @brief 멤버 초기화
     void initMembers() {
+        // 고정 길이 문자열 버퍼는 zero-fill로 시작해 디코딩 시 불필요한 garbage를 방지한다.
         std::memset(title, 0, sizeof(title));
         cost = 0;
     }
@@ -39,6 +41,7 @@ class FixedB : public FdFile::FixedRecordBase<FixedB> {
   public:
     /// @brief 커스텀 생성자
     FixedB(const char* t, int64_t c, const char* idStr) {
+        // 레코드 멤버 -> ID -> 레이아웃 순으로 초기화해 serialize 준비 상태를 보장한다.
         initMembers();
         if (t)
             std::strncpy(title, t, sizeof(title));

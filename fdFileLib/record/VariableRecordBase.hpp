@@ -22,11 +22,11 @@
 
 namespace FdFile {
 
-/// @brief 가변 길이 텍스트 레코드 (JSON 스타일 Key-Value)
 /// @brief 가변 길이 텍스트 레코드 베이스 클래스 (구 TextRecordBase)
 /// @details JSON 스타일의 Key-Value 쌍으로 데이터를 직렬화/역직렬화하는 가상 인터페이스를
 /// 제공합니다.
 ///          이 클래스를 상속받아 구체적인 가변 길이 레코드를 구현해야 합니다.
+///          저장소는 typeName()+toKv()/fromKv() 조합을 통해 객체를 파일 포맷으로 변환합니다.
 class VariableRecordBase : public RecordBase {
   public:
     /// @brief 가상 소멸자
@@ -55,6 +55,7 @@ class VariableRecordBase : public RecordBase {
 
     /// @brief 객체 복제 (Deep Copy)
     /// @details 현재 객체의 복사본을 생성하여 반환합니다.
+    ///          저장소 내부 캐시와 호출자 반환 객체의 수명/가변 상태를 분리하기 위해 필수입니다.
     /// @return 복제된 객체를 관리하는 std::unique_ptr
     virtual std::unique_ptr<RecordBase> clone() const = 0;
 };
