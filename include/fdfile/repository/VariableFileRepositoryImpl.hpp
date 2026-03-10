@@ -24,6 +24,14 @@ class VariableFileRepositoryImpl : public RecordRepository<VariableRecordBase> {
                                std::error_code& ec);
     ~VariableFileRepositoryImpl() override = default;
 
+    // 복사 방지
+    VariableFileRepositoryImpl(const VariableFileRepositoryImpl&) = delete;
+    VariableFileRepositoryImpl& operator=(const VariableFileRepositoryImpl&) = delete;
+
+    // 이동 허용
+    VariableFileRepositoryImpl(VariableFileRepositoryImpl&&) = default;
+    VariableFileRepositoryImpl& operator=(VariableFileRepositoryImpl&&) = default;
+
     bool save(const VariableRecordBase& record, std::error_code& ec) override;
     bool saveAll(const std::vector<const VariableRecordBase*>& records,
                  std::error_code& ec) override;
